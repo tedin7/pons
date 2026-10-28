@@ -24,6 +24,9 @@ object LinuxSession {
     private val logLines = ArrayDeque<String>()
     private val listeners = CopyOnWriteArrayList<(String) -> Unit>()
 
+    /** Box64 checks the flush file every 2 s; then writing the cache takes a moment. */
+    private const val FLUSH_WAIT_MS = 4_000L
+
     @Volatile var input: InputBridge? = null
         private set
 
@@ -42,6 +45,7 @@ object LinuxSession {
 
     /** Set by [stop]: errors after it are just the program being torn down. */
     @Volatile private var stopped = false
+    @Volatile private var flushFile: File? = null
 
     fun log(): List<String> = synchronized(logLines) { logLines.toList() }
 
@@ -55,6 +59,7 @@ object LinuxSession {
         stopped = false
         this.program = program
         val paths = LinuxPaths(context)
+        flushFile = paths.dynacacheFlush
         try {
             installMissing(context, paths, program)
             startScreen(paths, DisplaySettings(context).resolution)
@@ -81,12 +86,28 @@ object LinuxSession {
         input = null
         audio?.stop()
         audio = null
+        saveTranslations()
         processes.forEach { it.destroy() }
         processes.clear()
         ProcessTree.killDescendants()
         running = false
         programStartedAt = 0L
         program = null
+    }
+
+    /**
+     * Asks Box64 to save its translations before the kill: the next start then
+     * loads them instead of translating the whole game again (minutes of every
+     * core at full load). Box64 polls the file every 2 s.
+     */
+    private fun saveTranslations() {
+        val file = flushFile ?: return
+        if (!running) return
+        runCatching {
+            file.writeText(System.nanoTime().toString())
+            file.setLastModified(System.currentTimeMillis())
+            Thread.sleep(FLUSH_WAIT_MS)
+        }
     }
 
     private fun installMissing(context: Context, paths: LinuxPaths, program: String) {

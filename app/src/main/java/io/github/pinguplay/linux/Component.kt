@@ -46,11 +46,12 @@ object Components {
     val BOX64 = Component(
         id = "box64",
         // Box64 main after v0.4.4 (LRCPC/LRCPC2 on Arm64) plus Pinguplay's patch that
-        // skips FPCR rounding switches on exact int32 -> double conversions.
-        version = "main-11a20e37-pp1",
-        sizeBytes = 8_537_852,
-        sha256 = "2ca875e28effb8db31820247710010ece184e7ff5ebb45973d63c82f4c67ef14",
-        url = "${BASE}box64-main-11a20e37-pp1-pinguplay.tar.xz",
+        // skips FPCR rounding switches on exact int32 -> double conversions, and one that
+        // saves the translation cache while the game runs (games here are killed, not exited).
+        version = "main-11a20e37-pp2",
+        sizeBytes = 8_562_312,
+        sha256 = "1589c2ba17a7b634034130b0d0a821c4d82f1eb8f5434ee14e552043c7f7bf8b",
+        url = "${BASE}box64-main-11a20e37-pp2-pinguplay.tar.xz",
     )
 
     val TOOLS = Component(

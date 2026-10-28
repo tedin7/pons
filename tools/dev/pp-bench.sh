@@ -36,6 +36,9 @@ RAW="$RAW_DIR/$(date +%Y%m%d-%H%M%S)-$LABEL.log"
 log() { echo "[pp-bench] $*" >&2; }
 
 stop_all() {
+    # Like the app: let Box64 save its translations first, so the next run's
+    # loading measures the cached path a player gets from the second start on.
+    $S shell "run-as $PKG sh -c 'pidof ck3 >/dev/null 2>&1 || ps -A -o ARGS | grep -q [c]k3 || exit 0; date > cache/proot-tmp/pinguplay-dynacache-flush; sleep 4'" >/dev/null 2>&1
     $S shell "run-as $PKG sh -c 'for p in \$(ps -A -o PID,ARGS | grep -E \"[l]ibproot|[c]k3|[s]team|[X]vfb|[p]ulseaudio|[b]ox64\" | cut -c1-6); do kill -9 \$p; done' 2>/dev/null; am force-stop $PKG" >/dev/null 2>&1
 }
 

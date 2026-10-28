@@ -25,6 +25,9 @@ object ProotCommand {
         "PINGUPLAY_PRESENT=/tmp/pinguplay-present",
         // Ask the app for Android graphics buffers to write frames into (no upload).
         "PINGUPLAY_AHB=1",
+        // Keep Box64's translations across starts even though games get killed.
+        "PINGUPLAY_DYNACACHE_FLUSH=/tmp/pinguplay-dynacache-flush",
+        "PINGUPLAY_DYNACACHE_PERIOD=90",
         // Above the panel's useful rate frames only cost heat the CPU needs.
         "PINGUPLAY_MAX_FPS=120",
         "BOX64_LOG=0",

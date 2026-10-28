@@ -21,4 +21,6 @@ class LinuxPaths(context: Context) {
 
     /** Finished game frames from our Mesa (direct present), as /tmp/pinguplay-present. */
     val present: File get() = File(tmp, "pinguplay-present")
+    /** Touched to make Box64 save its translation cache (see tools/box64/patches). */
+    val dynacacheFlush: File get() = File(tmp, "pinguplay-dynacache-flush")
 }
