@@ -25,7 +25,7 @@ $LAUNCH $LIB/libproot.so --kill-on-exit --link2symlink -0 -r \$D/files/rootfs -b
   DISPLAY=:0 XDG_RUNTIME_DIR=/tmp \
   VK_ICD_FILENAMES=/opt/pinguplay/mesa/share/vulkan/icd.d/freedreno_icd.aarch64.json \
   LD_LIBRARY_PATH=/opt/pinguplay/mesa/lib LIBGL_DRIVERS_PATH=/opt/pinguplay/mesa/lib/dri \
-  __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform \
+  __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink LIBGL_KOPPER_DRI2=1 TU_DEBUG=noconform \
   MESA_VK_WSI_DEBUG=sw PINGUPLAY_PRESENT=/tmp/pinguplay-present PINGUPLAY_MAX_FPS=120 \
-  PATH=/opt/pinguplay/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/sh /tmp/$NAME.sh $TAIL
+  PATH=/opt/pinguplay/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games /bin/sh /tmp/$NAME.sh $TAIL
 '"

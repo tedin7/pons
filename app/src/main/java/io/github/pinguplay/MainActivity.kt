@@ -61,6 +61,21 @@ class MainActivity : Activity() {
         })
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Debug builds only: `am start --es program "<command>"` runs a program, for tests.
+        val program = intent.getStringExtra(EXTRA_PROGRAM)
+        if (BuildConfig.DEBUG && program != null) {
+            intent.removeExtra(EXTRA_PROGRAM)
+            run(program)
+        }
+    }
+
+    override fun onNewIntent(newIntent: Intent) {
+        super.onNewIntent(newIntent)
+        intent = newIntent
+    }
+
     override fun onStart() {
         super.onStart()
         output.text = ""
@@ -86,6 +101,7 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        private const val EXTRA_PROGRAM = "program"
         private val PROGRAMS = listOf(
             "Cubo Vulkan" to "vkcube --wsi xcb",
             "Prova grafica" to "pinguplay-bench",

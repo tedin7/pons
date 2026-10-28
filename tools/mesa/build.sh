@@ -29,7 +29,7 @@ meson setup build --cross-file /build/cross-aarch64.ini \
   --prefix="$PREFIX" --libdir=lib --buildtype=release -Doptimization=3 -Db_ndebug=true \
   -Dc_args="$CPU_FLAGS" -Dcpp_args="$CPU_FLAGS" \
   -Dplatforms=x11 -Dvulkan-drivers=freedreno -Dfreedreno-kmds=kgsl,msm \
-  -Dgallium-drivers=zink -Dglx=dri -Degl=enabled -Dgles1=disabled -Dgles2=enabled \
+  -Dgallium-drivers=zink,softpipe -Dglx=dri -Degl=enabled -Dgles1=disabled -Dgles2=enabled \
   -Dllvm=disabled -Dvalgrind=disabled -Dlibunwind=disabled -Dlmsensors=disabled \
   -Dvideo-codecs= -Dbuild-tests=false
 ninja -C build -j"$(nproc)"

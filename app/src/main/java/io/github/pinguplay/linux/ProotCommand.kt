@@ -16,6 +16,8 @@ object ProotCommand {
         "__GLX_VENDOR_LIBRARY_NAME=mesa",
         "__EGL_VENDOR_LIBRARY_FILENAMES=/opt/pinguplay/mesa/share/glvnd/egl_vendor.d/50_mesa.json",
         "MESA_LOADER_DRIVER_OVERRIDE=zink",
+        // Xvfb has no DRI3; without this Mesa refuses Zink and falls back to software GL.
+        "LIBGL_KOPPER_DRI2=1",
         "TU_DEBUG=noconform",
         // Xvfb has no DRI3, so Vulkan presents through the CPU path; our Mesa patch
         // then hands finished frames straight to the app, skipping the X server.
@@ -45,7 +47,7 @@ object ProotCommand {
             "USER=root",
             "TERM=xterm-256color",
             "LANG=C.UTF-8",
-            "PATH=/opt/pinguplay/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "PATH=/opt/pinguplay/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games",
         ) + GRAPHICS_ENV + listOf("/bin/sh", "-c", script)
 
         return ProcessBuilder(command).redirectErrorStream(true).apply {

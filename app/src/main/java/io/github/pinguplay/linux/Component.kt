@@ -33,11 +33,12 @@ object Components {
     val MESA = Component(
         id = "mesa",
         // Mesa main (27.0-devel): Adreno 830 entries, UBWC 5, Pinguplay direct present
-        // (triple-buffered frames handed to the app without the X server).
-        version = "main-f01e9b0-pp2",
-        sizeBytes = 7_128_800,
-        sha256 = "5461b9c4df6a6c1489f92f74c33c9611d670443a4c209e40979bdd2a6468eb52",
-        url = "${BASE}mesa-main-f01e9b0-pp2-pinguplay.tar.xz",
+        // (triple-buffered frames handed to the app without the X server), softpipe so
+        // Xvfb can offer GLX while games render through Zink on the GPU.
+        version = "main-f01e9b0-pp3",
+        sizeBytes = 7_200_216,
+        sha256 = "9df942abdc6a7cc264a9c8fe01b33240ebf670058ce82cfda658478aff72119e",
+        url = "${BASE}mesa-main-f01e9b0-pp3-pinguplay.tar.xz",
         replaces = "opt/pinguplay/mesa",
     )
 
