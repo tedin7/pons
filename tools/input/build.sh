@@ -15,8 +15,10 @@ docker run --rm -v "$HERE":/src:ro -v "$HERE/../transbench":/bench:ro -v "$OUT":
   # Same flags on both sides; no FMA contraction so results match bit for bit.
   g++ -O2 -std=c++17 -march=x86-64-v2 -ffp-contract=off -pthread -o /stage/opt/pinguplay/bench/transbench-x86_64 /bench/transbench.cpp
   aarch64-linux-gnu-g++ -O2 -std=c++17 -march=armv8.7-a -ffp-contract=off -pthread -o /stage/opt/pinguplay/bench/transbench-arm64 /bench/transbench.cpp
-  strip /stage/opt/pinguplay/bench/transbench-x86_64
-  aarch64-linux-gnu-strip /stage/opt/pinguplay/bench/transbench-arm64
+  gcc -O2 -fno-builtin -march=x86-64-v2 -Wl,-z,now -o /stage/opt/pinguplay/bench/bridgecost-x86_64 /bench/bridgecost.c -lm
+  aarch64-linux-gnu-gcc -O2 -fno-builtin -march=armv8.7-a -o /stage/opt/pinguplay/bench/bridgecost-arm64 /bench/bridgecost.c -lm
+  strip /stage/opt/pinguplay/bench/transbench-x86_64 /stage/opt/pinguplay/bench/bridgecost-x86_64
+  aarch64-linux-gnu-strip /stage/opt/pinguplay/bench/transbench-arm64 /stage/opt/pinguplay/bench/bridgecost-arm64
   tar -C /stage -cJf /out/pinguplay-tools-$VERSION.tar.xz opt root
 "
 ls -la "$OUT/pinguplay-tools-$VERSION.tar.xz"

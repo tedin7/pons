@@ -4,4 +4,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       crossbuild-essential-arm64 cmake ninja-build python3 git ca-certificates xz-utils \
     && rm -rf /var/lib/apt/lists/*
 COPY build.sh /build/
+COPY patches /build/patches
 ENTRYPOINT ["/build/build.sh"]

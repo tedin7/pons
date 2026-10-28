@@ -21,7 +21,7 @@ score() {
 run_case() {  # name, env settings...
     name=$1; shift
     ok=0
-    for attempt in 1 2; do
+    for attempt in 1 2 3; do
         if env "$@" box64 "$BENCH/transbench-x86_64" >"$TMP/$name.$attempt" 2>"$TMP/$name.err"; then
             ok=$((ok + 1))
         else
@@ -35,7 +35,7 @@ run_case() {  # name, env settings...
     elif ! cmp -s "$TMP/$name.sum" "$TMP/reference.sum"; then
         echo "  $name: risultati diversi, scartato"; return
     fi
-    best_of "$TMP"/"$name".[12] > "$TMP/$name.best"
+    best_of "$TMP"/"$name".[123] > "$TMP/$name.best"
     s=$(score "$TMP/$name.best")
     printf "  %-15s %3s%% del nativo   %s\n" "$name" "$s" "$(tr '\n' ' ' < "$TMP/$name.best")"
     echo "$s $name $*" >> "$TMP/results"
@@ -47,13 +47,16 @@ best_of "$TMP"/native.[123] > "$TMP/native.best"
 echo "  $(tr '\n' ' ' < "$TMP/native.best")"
 
 echo "== x86 tradotto da Box64"
-export BOX64_LOG=0 BOX64_NOBANNER=1 BOX64_DYNACACHE=0
+# Translation cache stays on, as in real games; three runs each, best kept (the device
+# is noisy: thermal state and background apps move single runs by 2x).
+export BOX64_LOG=0 BOX64_NOBANNER=1
 run_case default
 run_case bigblock3      BOX64_DYNAREC_BIGBLOCK=3
 run_case callret2-pause BOX64_DYNAREC_CALLRET=2 BOX64_DYNAREC_PAUSE=1
 run_case safeflags0     BOX64_DYNAREC_SAFEFLAGS=0
 run_case weakbarrier2   BOX64_DYNAREC_WEAKBARRIER=2
 run_case forward1024    BOX64_DYNAREC_FORWARD=1024
+run_case fastround2     BOX64_DYNAREC_FASTROUND=2
 run_case combo          BOX64_DYNAREC_BIGBLOCK=3 BOX64_DYNAREC_SAFEFLAGS=0 BOX64_DYNAREC_WEAKBARRIER=2 BOX64_DYNAREC_FORWARD=1024 BOX64_DYNAREC_PAUSE=1
 
 WINNER=$(sort -rn "$TMP/results" | head -1)

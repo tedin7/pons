@@ -42,19 +42,20 @@ object Components {
 
     val BOX64 = Component(
         id = "box64",
-        // Box64 main after v0.4.4: LRCPC/LRCPC2 use on Arm64, many dynarec fixes.
-        version = "main-11a20e37",
-        sizeBytes = 8_528_000,
-        sha256 = "ac346d7e98fd34c60b11c9124e9e9ec3979c6c096d5e0a1adf31d48b085e4b38",
-        url = "${BASE}box64-main-11a20e37-pinguplay.tar.xz",
+        // Box64 main after v0.4.4 (LRCPC/LRCPC2 on Arm64) plus Pinguplay's patch that
+        // skips FPCR rounding switches on exact int32 -> double conversions.
+        version = "main-11a20e37-pp1",
+        sizeBytes = 8_537_852,
+        sha256 = "2ca875e28effb8db31820247710010ece184e7ff5ebb45973d63c82f4c67ef14",
+        url = "${BASE}box64-main-11a20e37-pp1-pinguplay.tar.xz",
     )
 
     val TOOLS = Component(
         id = "tools",
-        version = "5",
-        sizeBytes = 19_424,
-        sha256 = "b6496a201eef7035815c33a31c53891fbadb71fcb34d0aa9953226d5377285a7",
-        url = "${BASE}pinguplay-tools-5.tar.xz",
+        version = "7",
+        sizeBytes = 21_668,
+        sha256 = "253b7e3b95b1aaee6e9aeeb87674dbaf73373ad9b9d3a8e6222959d0dd6c62a3",
+        url = "${BASE}pinguplay-tools-7.tar.xz",
     )
 
     /** Order matters: the rootfs must exist before anything unpacks into it. */

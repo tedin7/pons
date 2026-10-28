@@ -2,7 +2,10 @@
 # Usage: build.sh <git-tag>  (source mounted at /src) -> /out/box64-<tag>-pinguplay.tar.xz
 set -eu
 TAG="$1"
-cmake -S /src -B /tmp/b -G Ninja \
+# Patch a copy so the mounted source stays pristine.
+rm -rf /tmp/src && cp -a /src /tmp/src
+python3 /build/patches/apply.py /tmp/src
+cmake -S /tmp/src -B /tmp/b -G Ninja \
   -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_ASM_COMPILER=aarch64-linux-gnu-gcc \
   -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
   -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSDORYON1=ON -DBOX32=ON -DBOX32_BINFMT=OFF \

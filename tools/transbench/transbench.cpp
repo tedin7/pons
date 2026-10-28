@@ -79,13 +79,13 @@ uint64_t economy() {
     return total + wealth.size();
 }
 
-// Floating point and SIMD-friendly loops: map shading and statistics.
-uint64_t math() {
+// Floating point and SIMD-friendly loops: map shading.
+uint64_t matrix() {
     constexpr int N = 192;
     std::vector<float> a(N * N), b(N * N), c(N * N);
     for (int i = 0; i < N * N; i++) {
-        a[i] = std::sin(i * 0.001f);
-        b[i] = std::cos(i * 0.002f);
+        a[i] = (i % 97) * 0.01f;
+        b[i] = (i % 89) * 0.02f;
     }
     for (int rep = 0; rep < 20; rep++) {
         for (int i = 0; i < N; i++)
@@ -94,9 +94,14 @@ uint64_t math() {
                 for (int j = 0; j < N; j++) c[i * N + j] += aik * b[k * N + j];
             }
     }
+    return static_cast<uint64_t>(c[N + 3] * 1000);
+}
+
+// Many short calls into the C math library: statistics and curves.
+uint64_t libm() {
     double acc = 0;
     for (int i = 0; i < 8000000; i++) acc += std::sqrt(i * 0.5) * std::exp(-i * 1e-7);
-    return static_cast<uint64_t>(acc) + static_cast<uint64_t>(c[N + 3] * 1000);
+    return static_cast<uint64_t>(acc);
 }
 
 // Many small jobs on a locked queue with atomics: the engine's worker pool.
@@ -157,7 +162,8 @@ void run(const char *name, uint64_t (*work)()) {
 int main() {
     run("pathfinding", pathfinding);
     run("economy", economy);
-    run("math", math);
+    run("matrix", matrix);
+    run("libm", libm);
     run("threads", threads);
     std::fprintf(stderr, "checksum %llu\n", static_cast<unsigned long long>(g_sink));
     return 0;
