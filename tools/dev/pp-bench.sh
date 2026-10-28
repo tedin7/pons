@@ -23,8 +23,11 @@ READY_TIMEOUT="${PP_BENCH_READY_TIMEOUT:-600}"
 SETTLE="${PP_BENCH_SETTLE:-20}"
 GAME_LOG="${PP_BENCH_GAME_LOG:-files/rootfs/root/.local/share/Paradox Interactive/Crusader Kings III/logs/debug.log}"
 READY_LOG="${PP_BENCH_READY_LOG:-Setting idler 'In Game'|Held the main menu}"
-# Keys sent after settling, e.g. "space 5" to unpause a strategy game at top speed.
+# Keys sent after settling, e.g. "space 5" to unpause a strategy game at top speed;
+# "type:word" types text (CK3 observer: "grave type:observe Return grave space 5").
 KEYS="${PP_BENCH_KEYS:-}"
+CK3_USER="files/rootfs/root/.local/share/Paradox Interactive/Crusader Kings III"
+PREPARE="${PP_BENCH_PREPARE-cd '$CK3_USER' && cp 'save games/Duke_Vratislav_II_of_Bohemia_1066_09_15.ck3' last_save.ck3}"
 RESULTS="${PP_BENCH_RESULTS:-/root/pinguplay-bench/results.tsv}"
 RAW_DIR="$(dirname "$RESULTS")/raw"
 mkdir -p "$RAW_DIR"
@@ -34,6 +37,10 @@ log() { echo "[pp-bench] $*" >&2; }
 
 stop_all() {
     $S shell "run-as $PKG sh -c 'for p in \$(ps -A -o PID,ARGS | grep -E \"[l]ibproot|[c]k3|[s]team|[X]vfb|[p]ulseaudio|[b]ox64\" | cut -c1-6); do kill -9 \$p; done' 2>/dev/null; am force-stop $PKG" >/dev/null 2>&1
+}
+
+in_front() {
+    $S shell "dumpsys activity activities | grep -m1 topResumedActivity" 2>/dev/null | grep -q "$PKG"
 }
 
 cpu_temp() {
@@ -62,6 +69,11 @@ done'
 stop_all
 # A stale log from the previous run would satisfy the ready check at once.
 $S shell "run-as $PKG rm -f '$GAME_LOG'" >/dev/null 2>&1
+# Same starting point every run: the game autosaves while it runs, and
+# -continuelastsave would otherwise load wherever the last run stopped.
+if [ -n "$PREPARE" ]; then
+    $S shell "run-as $PKG sh -c \"$PREPARE\"" >/dev/null 2>&1 || log "prepare failed"
+fi
 log "cooling down to ${COOL_C}C"
 waited=0
 while [ "$(cpu_temp)" -gt "$COOL_C" ] && [ "$waited" -lt 600 ]; do sleep 10; waited=$((waited + 10)); done
@@ -81,6 +93,7 @@ trap 'kill $SAMPLER_PID 2>/dev/null; stop_all' EXIT INT TERM
 # so frames alone would start measuring minutes too early.
 log "waiting for: $READY_LOG (max ${READY_TIMEOUT}s)"
 ready=0
+away=0
 while :; do
     sleep 5
     if $S shell "run-as $PKG grep -q -E \"$READY_LOG\" '$GAME_LOG'" 2>/dev/null; then
@@ -88,6 +101,13 @@ while :; do
         [ "$ready" = 1 ] && break
     fi
     alive=$(tail -1 "$RAW" | awk '{print $9}')
+    # Android cuts the network of background apps, so Steam cannot sign in and the
+    # game never starts: stop at once instead of waiting out the timeout.
+    if in_front; then away=0; else away=$((away + 1)); fi
+    if [ "$away" -ge 3 ]; then
+        log "app not in front (is someone using the tablet?)"
+        break
+    fi
     if [ $(( $(date +%s) - started )) -gt "$READY_TIMEOUT" ] || [ "$alive" = 0 ]; then
         log "not ready (alive=$alive)"
         break
@@ -99,7 +119,11 @@ if [ "$ready" = 1 ]; then
     log "settling ${SETTLE}s"
     sleep "$SETTLE"
     for key in $KEYS; do
-        PP_SERIAL="${PP_SERIAL}" "$(dirname "$0")/pp-run.sh" "DISPLAY=:0 xdotool key $key" >/dev/null 2>&1
+        case "$key" in
+            type:*) action="type --delay 80 ${key#type:}" ;;
+            *) action="key $key" ;;
+        esac
+        PP_SERIAL="${PP_SERIAL}" "$(dirname "$0")/pp-run.sh" "DISPLAY=:0 xdotool $action" >/dev/null 2>&1
         sleep 1
     done
 fi
@@ -107,7 +131,13 @@ mark=$(wc -l < "$RAW")
 
 if [ "$ready" = 1 ]; then
     log "measuring ${SECONDS_RUN}s"
-    sleep "$SECONDS_RUN"
+    half=$((SECONDS_RUN / 2))
+    sleep "$half"
+    # Who burns the CPU: processes, then the game's busiest threads.
+    $S shell "top -b -n 1 -d 2 -m 12 -o PID,%CPU,RES,NAME,ARGS | cut -c1-160; P=\$(pidof ck3 | cut -d' ' -f1); [ -n \"\$P\" ] && top -H -b -n 1 -d 2 -m 15 -p \$P -o TID,%CPU,NAME" > "${RAW%.log}.top" 2>/dev/null
+    sleep $((SECONDS_RUN - half))
+    # Proof of what was measured: the screen as the player saw it.
+    $S exec-out screencap -p > "${RAW%.log}.png" 2>/dev/null
 fi
 kill $SAMPLER_PID 2>/dev/null
 trap - EXIT INT TERM

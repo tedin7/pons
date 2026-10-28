@@ -106,6 +106,9 @@ class DisplayActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // The screen can come back from the menu or another app with the bars
+        // (and the tablet taskbar) showing over the game: hide them every time.
+        hideSystemBars()
         surface.onResume()
         status.post(statusUpdater)
         Choreographer.getInstance().postFrameCallback(vsyncDriver)
@@ -128,6 +131,11 @@ class DisplayActivity : Activity() {
         val sy = ((y - vyTop) / vh * area.height).toInt()
         if (sx !in 0 until area.width || sy !in 0 until area.height) return null
         return (area.x + sx) to (area.y + sy)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) hideSystemBars()
     }
 
     private fun hideSystemBars() {
