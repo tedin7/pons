@@ -89,7 +89,9 @@ class MainActivity : Activity() {
     }
 
     private fun run(program: String) {
-        LinuxSessionService.start(this, program)
+        // Pressing the same program again just brings its screen back: restarting
+        // Steam would throw away a login in progress.
+        if (LinuxSession.program != program) LinuxSessionService.start(this, program)
         openDisplay()
     }
 

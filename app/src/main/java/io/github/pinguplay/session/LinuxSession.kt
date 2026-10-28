@@ -27,7 +27,13 @@ object LinuxSession {
     @Volatile var input: InputBridge? = null
         private set
 
+    @Volatile private var audio: AudioBridge? = null
+
     @Volatile var running = false
+        private set
+
+    /** The program the current session runs, null when idle. */
+    @Volatile var program: String? = null
         private set
 
     /** When the current program was launched (uptime ms), 0 while installing or idle. */
@@ -47,11 +53,13 @@ object LinuxSession {
     fun start(context: Context, program: String) {
         stop()
         stopped = false
+        this.program = program
         val paths = LinuxPaths(context)
         try {
             installMissing(context, paths, program)
             startScreen(paths, DisplaySettings(context).resolution)
             startInput(paths)
+            startAudioAndBus(paths)
             running = true
             programStartedAt = android.os.SystemClock.uptimeMillis()
             emit("▶ $program")
@@ -71,11 +79,14 @@ object LinuxSession {
         stopped = true
         input?.close()
         input = null
+        audio?.stop()
+        audio = null
         processes.forEach { it.destroy() }
         processes.clear()
         ProcessTree.killDescendants()
         running = false
         programStartedAt = 0L
+        program = null
     }
 
     private fun installMissing(context: Context, paths: LinuxPaths, program: String) {
@@ -104,6 +115,22 @@ object LinuxSession {
             check(System.currentTimeMillis() < deadline) { "Lo schermo Linux non è partito" }
             Thread.sleep(100)
         }
+    }
+
+    /** PulseAudio piped to Android, plus the D-Bus session bus desktop programs expect. */
+    private fun startAudioAndBus(paths: LinuxPaths) {
+        File(paths.tmp, "dbus-session").delete()
+        File(paths.tmp, "pulse-native").delete()
+        paths.audioFifo.delete()
+        launch(paths, "exec dbus-daemon --session --nofork --address=unix:path=/tmp/dbus-session", "dbus")
+        launch(paths,
+            "exec pulseaudio -n --daemonize=no --exit-idle-time=-1 --disallow-exit " +
+                "--disable-shm=yes --log-target=stderr " +
+                "-L 'module-native-protocol-unix auth-anonymous=1 socket=/tmp/pulse-native' " +
+                "-L 'module-pipe-sink file=/tmp/pinguplay-audio format=s16le rate=${AudioBridge.RATE} " +
+                "channels=2 sink_name=android sink_properties=device.description=Android' " +
+                "-L module-always-sink", "audio")
+        audio = AudioBridge(paths.audioFifo).also { it.start() }
     }
 
     private fun startInput(paths: LinuxPaths) {

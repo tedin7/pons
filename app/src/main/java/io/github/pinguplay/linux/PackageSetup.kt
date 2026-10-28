@@ -17,6 +17,8 @@ class PackageSetup(context: Context, private val paths: LinuxPaths) {
             "libglx-mesa0", "libvulkan1", "vulkan-tools", "x11-utils", "libxtst6",
             "fonts-dejavu-core",
         )),
+        // Sound (PulseAudio piped to the app) and a session bus for desktop programs.
+        AUDIO("1", listOf("pulseaudio", "pulseaudio-utils", "dbus-daemon", "dbus-bin")),
         BENCHMARK("1", listOf("vkmark", "glmark2-x11", "mesa-utils", "mangohud")),
         // Libraries the arm64 Steam client and its web view link against.
         STEAM("3", listOf(
@@ -60,6 +62,7 @@ class PackageSetup(context: Context, private val paths: LinuxPaths) {
         /** Groups a program needs on top of [Group.SCREEN]. */
         fun groupsFor(program: String): List<Group> = buildList {
             add(Group.SCREEN)
+            add(Group.AUDIO)
             if ("pinguplay-bench" in program) add(Group.BENCHMARK)
             if ("pinguplay-steam" in program) add(Group.STEAM)
         }

@@ -19,9 +19,15 @@ for arg in "$@"; do
 done
 [ -n "$query" ] || exit 1
 
-# Exact answer when libpinguplay-robust.so saw the connection being made.
+# Exact answer when libpinguplay-robust.so saw the connection being made. Steam can
+# ask before the client has written its entry, so wait up to half a second.
 port=${query##*:}
 entry=/tmp/.pinguplay-sockets/$port
+tries=0
+while [ ! -r "$entry" ] && [ "$tries" -lt 10 ]; do
+    sleep 0.05
+    tries=$((tries + 1))
+done
 if [ -r "$entry" ]; then
     read -r pid ppid lport rport < "$entry"
     if [ -d "/proc/$pid" ]; then

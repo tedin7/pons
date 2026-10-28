@@ -16,6 +16,9 @@ class LinuxPaths(context: Context) {
 
     val framebuffer: File get() = File(tmp, "Xvfb_screen0")
 
+    /** PulseAudio's output, raw 48 kHz stereo s16le (module-pipe-sink), as /tmp/pinguplay-audio. */
+    val audioFifo: File get() = File(tmp, "pinguplay-audio")
+
     /** Finished game frames from our Mesa (direct present), as /tmp/pinguplay-present. */
     val present: File get() = File(tmp, "pinguplay-present")
 }

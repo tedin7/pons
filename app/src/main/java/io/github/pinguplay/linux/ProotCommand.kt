@@ -26,6 +26,9 @@ object ProotCommand {
         // Above the panel's useful rate frames only cost heat the CPU needs.
         "PINGUPLAY_MAX_FPS=120",
         "BOX64_LOG=0",
+        // Started by LinuxSession for every session.
+        "PULSE_SERVER=unix:/tmp/pulse-native",
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/tmp/dbus-session",
     )
 
     fun build(paths: LinuxPaths, script: String): ProcessBuilder {
