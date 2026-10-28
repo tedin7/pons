@@ -58,3 +58,20 @@ third-party software under its own licenses; see `NOTICE.md`.
 
 Steam is a trademark of Valve Corporation. Pinguplay is not affiliated with Valve; it
 downloads Valve's client from Valve's servers on the user's device and never redistributes it.
+
+## Measurements (OnePlus Pad 3, Snapdragon 8 Elite, Adreno 830)
+
+| Test | Result |
+| --- | --- |
+| Vulkan driver | Mesa 27.0-devel Turnip: "Adreno (TM) 830v1", Vulkan 1.4 |
+| OpenGL | Zink on Turnip: OpenGL 4.6 |
+| vkcube 1600×1132, present through the X server | 74 fps |
+| vkcube 1600×1132, Pinguplay direct present | 352 fps |
+| Neverball, native arm64, 1600×1132 | 78–95 fps |
+| Neverball, x86_64 build through Box64, 1600×1132 | 80–149 fps (same as native: GPU-bound) |
+| transbench, x86 through Box64 vs native (geomean) | 49% default, 52% tuned |
+| loop with int→double conversion, Box64 upstream → patched | 16.9 → 5.9 ns |
+
+Running x86 games outside Steam can hit gaps in Box64's native wrappers; for
+Neverball we used Debian's x86 `libjpeg62-turbo` and `libpng16` (with
+`BOX64_EMULATED_LIBS=libpng16.so.16`, the wrapper lacks `png_set_longjmp_fn`).
