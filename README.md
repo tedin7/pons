@@ -105,11 +105,14 @@ math calls. It is built for x86_64 (through Box64) and arm64 to compare the two.
 
 Example (x86_64 `loadsim` over `/usr`, 14 207 entries, 183 MB):
 
-| | proot stops | wall | read phase |
-| --- | --- | --- | --- |
-| proot only | tens of thousands | — | — |
-| + file fast path | 2 815 (1 101 of them `brk`) | 1.5 s | 997 ms |
-| + 64 MB heap steps | 1 758 (mostly Box64 loading its libraries) | 0.8 s | 158 ms |
+| | proot stops | wall | scan phase | read phase |
+| --- | --- | --- | --- | --- |
+| proot only (64 MB heap steps) | 46 662 | 8.3 s | 4 739 ms | 2 983 ms |
+| + file fast path | 2 815 (1 101 of them `brk`) | 1.5 s | 112 ms | 997 ms |
+| + file fast path + 64 MB heap steps | 1 758 (mostly Box64 loading its libraries) | **0.8 s** | 107 ms | 158 ms |
+
+The profiler's per-stop cost comes from a `stat` microbenchmark and over-estimates the
+total (it reported 139 % of wall on the first row); read it as a ranking, not a budget.
 
 The game benchmark cools the device down first, restores the same save, waits for the
 game's own "ready" log line, sends scripted keys if the scene needs them, then samples
