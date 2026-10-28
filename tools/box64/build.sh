@@ -1,5 +1,5 @@
 #!/bin/sh
-# Usage: build.sh <git-tag>  (source mounted at /src) -> /out/box64-<tag>-pinguplay.tar.xz
+# Usage: build.sh <git-tag>  (source mounted at /src) -> /out/box64-<tag>-pons.tar.xz
 set -eu
 TAG="$1"
 # Patch a copy so the mounted source stays pristine.
@@ -13,5 +13,5 @@ cmake -S /tmp/src -B /tmp/b -G Ninja \
 ninja -C /tmp/b -j"$(nproc)"
 DESTDIR=/tmp/stage ninja -C /tmp/b install
 aarch64-linux-gnu-strip /tmp/stage/usr/local/bin/box64
-tar -C /tmp/stage -cJf "/out/box64-$TAG-pinguplay.tar.xz" .
+tar -C /tmp/stage -cJf "/out/box64-$TAG-pons.tar.xz" .
 ls -la /out

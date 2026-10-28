@@ -6,8 +6,8 @@ diff -ru a/src/syscall/seccomp.c b/src/syscall/seccomp.c
  #include <string.h>        /* memcpy(3), */
  #include <stddef.h>        /* offsetof(3), */
 +
-+/* "PINGUPLY": see set_seccomp_filters().  Shared with tools/compat/pinguplay-fastpath.c.  */
-+#define PROOT_FASTPATH_MAGIC 0x594c50554755494eULL
++/* "PONSPATH": see set_seccomp_filters().  Shared with tools/compat/pons-fastpath.c.  */
++#define PROOT_FASTPATH_MAGIC 0x48544150534e4f50ULL
  #include <stdint.h>        /* uint*_t, UINT*_MAX, */
  #include <assert.h>        /* assert(3), */
  
@@ -15,7 +15,7 @@ diff -ru a/src/syscall/seccomp.c b/src/syscall/seccomp.c
  	if (status < 0)
  		goto end;
  
-+	/* Pinguplay fast path: a program that already rewrote the paths itself marks
++	/* Pons fast path: a program that already rewrote the paths itself marks
 +	 * the call with PROOT_FASTPATH_MAGIC in the 6th argument, which none of the
 +	 * path syscalls use; such calls skip the ptrace stop entirely.  The marker is
 +	 * 64-bit, so an accidental match is not a practical concern.  */

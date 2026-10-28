@@ -1,4 +1,4 @@
-# Managed by Pinguplay: per-game Box64 tuning, read after /etc/box64.box64rc.
+# Managed by Pons: per-game Box64 tuning, read after /etc/box64.box64rc.
 # Values are starting points chosen for the Snapdragon 8 Elite; measure before changing.
 
 [ck3]

@@ -13,7 +13,7 @@
 #      memory, whether the app is still alive;
 #   5. stops everything and appends the summary to $PP_BENCH_RESULTS.
 # Game settings come from the profile tools/input/games/<game>.conf (the same file
-# pinguplay-game reads inside Linux); PP_BENCH_* variables override them.
+# pons-game reads inside Linux); PP_BENCH_* variables override them.
 # No touch, no mouse: repeatable in a loop (see pp-bench-loop.sh).
 set -u
 SECONDS_RUN="${2:-90}"
@@ -28,7 +28,7 @@ case "$1" in
         eval "scene=\${SCENE_$SCENE:-}"
         [ -n "$scene" ] || { echo "profile $GAME_ID has no scene $SCENE" >&2; exit 2; }
         LABEL="${3:-$GAME_ID-$SCENE}"
-        PROGRAM="pinguplay-game $GAME_ID ${scene%%|*}"
+        PROGRAM="pons-game $GAME_ID ${scene%%|*}"
         DEF_KEYS="${scene#*|}"
         # "~" in the profile is the Linux home; on the tablet that is $HOME_DIR.
         DEF_LOG=$(printf '%s' "$LOG" | sed "s|^~|$HOME_DIR|")
@@ -43,7 +43,7 @@ case "$1" in
 esac
 ADB="${ADB:-/root/.local/mercati-android-tools/sdk/platform-tools/adb -P 5037}"
 S="$ADB -s ${PP_SERIAL:?set PP_SERIAL}"
-PKG=io.github.pinguplay
+PKG=io.github.pons
 COOL_C="${PP_BENCH_COOL_C:-45}"
 READY_TIMEOUT="${PP_BENCH_READY_TIMEOUT:-600}"
 SETTLE="${PP_BENCH_SETTLE:-20}"
@@ -53,14 +53,14 @@ READY_LOG="${PP_BENCH_READY_LOG:-$DEF_READY}"
 # "type:word" types text.
 KEYS="${PP_BENCH_KEYS:-$DEF_KEYS}"
 PREPARE="${PP_BENCH_PREPARE-$DEF_PREPARE}"
-# Variables for the program, e.g. PP_BENCH_ENV="PINGUPLAY_FASTPATH=0" for an A/B run.
+# Variables for the program, e.g. PP_BENCH_ENV="PONS_FASTPATH=0" for an A/B run.
 PROGRAM="${PP_BENCH_ENV:+$PP_BENCH_ENV }$PROGRAM"
 if [ "${PP_BENCH_DRY:-0}" = 1 ]; then
     printf 'label=%s\nprogram=%s\nkeys=%s\nlog=%s\nready=%s\nprepare=%s\n' \
         "$LABEL" "$PROGRAM" "$KEYS" "$GAME_LOG" "$READY_LOG" "$PREPARE"
     exit 0
 fi
-RESULTS="${PP_BENCH_RESULTS:-/root/pinguplay-bench/results.tsv}"
+RESULTS="${PP_BENCH_RESULTS:-/root/pons-bench/results.tsv}"
 RAW_DIR="$(dirname "$RESULTS")/raw"
 mkdir -p "$RAW_DIR"
 RAW="$RAW_DIR/$(date +%Y%m%d-%H%M%S)-$LABEL.log"
@@ -70,7 +70,7 @@ log() { echo "[pp-bench] $*" >&2; }
 stop_all() {
     # Like the app: let Box64 save its translations first, so the next run's
     # loading measures the cached path a player gets from the second start on.
-    $S shell "run-as $PKG sh -c 'pidof ck3 >/dev/null 2>&1 || ps -A -o ARGS | grep -q [c]k3 || exit 0; date > cache/proot-tmp/pinguplay-dynacache-flush; sleep 4'" >/dev/null 2>&1
+    $S shell "run-as $PKG sh -c 'pidof ck3 >/dev/null 2>&1 || ps -A -o ARGS | grep -q [c]k3 || exit 0; date > cache/proot-tmp/pons-dynacache-flush; sleep 4'" >/dev/null 2>&1
     $S shell "run-as $PKG sh -c 'for p in \$(ps -A -o PID,ARGS | grep -E \"[l]ibproot|[c]k3|[s]team|[X]vfb|[p]ulseaudio|[b]ox64\" | cut -c1-6); do kill -9 \$p; done' 2>/dev/null; am force-stop $PKG" >/dev/null 2>&1
 }
 
@@ -86,17 +86,17 @@ cpu_temp() {
 # Temperatures come from Android's thermal HAL (the values its throttling acts on),
 # not raw sysfs zones, whose hottest core sensor spikes far above them.
 # One device-side loop printing a sample line per second until killed.
-SAMPLER='P=cache/proot-tmp/pinguplay-present
+SAMPLER='P=cache/proot-tmp/pons-present
 while :; do
   # header u32 words 8..13: sequence (lo, hi), x, y, frames late >50 ms, >100 ms
-  set -- $(run-as io.github.pinguplay od -A n -t u4 -j 32 -N 24 $P 2>/dev/null) 0 0 0 0 0 0
+  set -- $(run-as io.github.pons od -A n -t u4 -j 32 -N 24 $P 2>/dev/null) 0 0 0 0 0 0
   F=$1 L=$5 LL=$6
   T=$(date +%s.%N)
   D=$(dumpsys thermalservice 2>/dev/null)
   ST=$(echo "$D" | sed -n "s/^Thermal Status: //p" | head -1)
   Z=$(echo "$D" | sed -n "/Current temperatures from HAL/,/Current cooling/p" | grep -o "mValue=[0-9.]*, mType=[013]," | tr "=," "  " | awk "\$4==0{if(\$2>c)c=\$2} \$4==1{if(\$2>g)g=\$2} \$4==3{s=\$2} END{printf \"%d %d %d\", c, g, s}")
   M=$(awk "/MemAvailable/{printf \"%d\", \$2/1024}" /proc/meminfo)
-  A=$(pidof io.github.pinguplay >/dev/null && echo 1 || echo 0)
+  A=$(pidof io.github.pons >/dev/null && echo 1 || echo 0)
   echo "S ${F:-0} $T $Z ${ST:-?} $M $A $L $LL"
   sleep 1
 done'

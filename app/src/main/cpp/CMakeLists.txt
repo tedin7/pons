@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(pinguplay_native C)
+project(pons_native C)
 
-add_library(pinguplay_ahb SHARED pinguplay_ahb.c)
-target_link_libraries(pinguplay_ahb android nativewindow EGL GLESv2 log dl)
+add_library(pons_ahb SHARED pons_ahb.c)
+target_link_libraries(pons_ahb android nativewindow EGL GLESv2 log dl)

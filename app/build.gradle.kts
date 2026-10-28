@@ -1,14 +1,24 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
+// Components come from the GitHub release; a debug build can use a local mirror
+// instead: put pons.devMirror=http://<host>:<port>/ in local.properties (not committed).
+val releaseComponents = "https://github.com/tedin7/pons/releases/download/components/"
+val devMirror: String = Properties().run {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
+    getProperty("pons.devMirror") ?: releaseComponents
+}
+
 android {
-    namespace = "io.github.pinguplay"
+    namespace = "io.github.pons"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.pinguplay"
+        applicationId = "io.github.pons"
         minSdk = 33
         targetSdk = 35
         versionCode = 1
@@ -28,12 +38,10 @@ android {
 
     buildTypes {
         debug {
-            // Dev mirror on the build machine, reachable over Tailscale.
-            buildConfigField("String", "COMPONENTS_BASE_URL", "\"http://mirror.example:8765/\"")
+            buildConfigField("String", "COMPONENTS_BASE_URL", "\"$devMirror\"")
         }
         release {
-            buildConfigField("String", "COMPONENTS_BASE_URL",
-                "\"https://github.com/pinguplay/pinguplay/releases/download/components/\"")
+            buildConfigField("String", "COMPONENTS_BASE_URL", "\"$releaseComponents\"")
         }
     }
 

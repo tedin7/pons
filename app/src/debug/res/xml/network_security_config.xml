@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Debug only: the dev component mirror is plain HTTP over Tailscale; files are sha256-checked. -->
+<!-- Debug only: a local component mirror (pons.devMirror) may be plain HTTP; every
+     component is sha256-checked before use. Release builds keep HTTPS only. -->
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">mirror.example</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

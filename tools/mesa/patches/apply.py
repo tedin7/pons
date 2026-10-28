@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Applies Pinguplay's Mesa changes to a Mesa source tree: apply.py <mesa-src>."""
+"""Applies Pons's Mesa changes to a Mesa source tree: apply.py <mesa-src>."""
 import pathlib
 import shutil
 import sys
@@ -7,8 +7,8 @@ import sys
 src = pathlib.Path(sys.argv[1])
 here = pathlib.Path(__file__).resolve().parent
 wsi = src / "src/vulkan/wsi"
-shutil.copy(here / "wsi_pinguplay_fb.h", wsi / "wsi_pinguplay_fb.h")
-shutil.copy(here / "wsi_pinguplay_async.h", wsi / "wsi_pinguplay_async.h")
+shutil.copy(here / "wsi_pons_fb.h", wsi / "wsi_pons_fb.h")
+shutil.copy(here / "wsi_pons_async.h", wsi / "wsi_pons_async.h")
 
 x11 = wsi / "wsi_common_x11.c"
 code = x11.read_text()
@@ -22,37 +22,37 @@ def replace_once(old: str, new: str) -> None:
 
 
 replace_once('#include "wsi_common_queue.h"\n',
-             '#include "wsi_common_queue.h"\n#include "wsi_pinguplay_fb.h"\n#include "wsi_pinguplay_async.h"\n')
+             '#include "wsi_common_queue.h"\n#include "wsi_pons_fb.h"\n#include "wsi_pons_async.h"\n')
 
 replace_once("""   bool                                         has_mit_shm;
    bool                                         has_async_may_tear;""",
              """   bool                                         has_mit_shm;
    bool                                         has_async_may_tear;
-   /* Pinguplay direct present: window origin on the root window, looked up once. */
-   bool                                         pinguplay_origin_known;
-   bool                                         pinguplay_fullscreen;
-   int16_t                                      pinguplay_x;
-   int16_t                                      pinguplay_y;""")
+   /* Pons direct present: window origin on the root window, looked up once. */
+   bool                                         pons_origin_known;
+   bool                                         pons_fullscreen;
+   int16_t                                      pons_x;
+   int16_t                                      pons_y;""")
 
 replace_once("""/**
  * Send image to X server unaccelerated (software drivers).
  */
 static VkResult
 x11_present_to_x11_sw(""", """/**
- * Pinguplay: write the frame straight into Xvfb's framebuffer file.
+ * Pons: write the frame straight into Xvfb's framebuffer file.
  * Returns false when not available, so the frame goes through the socket.
  */
 static bool
-x11_present_pinguplay(struct x11_swapchain *chain, struct x11_image *image)
+x11_present_pons(struct x11_swapchain *chain, struct x11_image *image)
 {
-   if (!chain->pinguplay_origin_known) {
+   if (!chain->pons_origin_known) {
       const xcb_setup_t *setup = xcb_get_setup(chain->conn);
       xcb_screen_t *screen = xcb_setup_roots_iterator(setup).data;
       if (screen == NULL)
          return false;
       /* Only full-screen windows (games) bypass the X server; dialogs and
        * launchers stay ordinary windows on the desktop the app also shows. */
-      chain->pinguplay_fullscreen =
+      chain->pons_fullscreen =
          chain->extent.width == screen->width_in_pixels &&
          chain->extent.height == screen->height_in_pixels;
       xcb_translate_coordinates_reply_t *origin = xcb_translate_coordinates_reply(
@@ -60,14 +60,14 @@ x11_present_pinguplay(struct x11_swapchain *chain, struct x11_image *image)
          NULL);
       if (origin == NULL)
          return false;
-      chain->pinguplay_x = origin->dst_x;
-      chain->pinguplay_y = origin->dst_y;
-      chain->pinguplay_origin_known = true;
+      chain->pons_x = origin->dst_x;
+      chain->pons_y = origin->dst_y;
+      chain->pons_origin_known = true;
       free(origin);
    }
-   if (!chain->pinguplay_fullscreen || chain->pinguplay_x != 0 || chain->pinguplay_y != 0)
+   if (!chain->pons_fullscreen || chain->pons_x != 0 || chain->pons_y != 0)
       return false;
-   return pinguplay_fb_present(chain->pinguplay_x, chain->pinguplay_y,
+   return pons_fb_present(chain->pons_x, chain->pons_y,
                                chain->extent.width, chain->extent.height,
                                (const uint8_t *)image->base.cpu_map,
                                image->base.row_pitches[0]);
@@ -83,7 +83,7 @@ replace_once("""   uint64_t max_req_len = xcb_get_maximum_request_length(chain->
 
    if (image->rectangle_count > 0) {""", """   uint64_t max_req_len = xcb_get_maximum_request_length(chain->conn);
 
-   if (x11_present_pinguplay(chain, image)) {
+   if (x11_present_pons(chain, image)) {
       /* Written straight into the screen the app shows. */
    } else if (image->rectangle_count > 0) {""")
 
@@ -92,9 +92,9 @@ replace_once("""   assert(!chain->base.image_info.explicit_sync);
 """, """   assert(!chain->base.image_info.explicit_sync);
    struct x11_image *image = &chain->images[image_index];
 
-   /* Pinguplay async present: the application thread no longer waited for the
+   /* Pons async present: the application thread no longer waited for the
     * GPU, so wait here, in the X11 queue thread, before reading the frame. */
-   if (pinguplay_async_present()) {
+   if (pons_async_present()) {
       chain->base.wsi->WaitForFences(chain->base.device, 1,
                                      &chain->base.fences[image_index], true, UINT64_MAX);
    }
@@ -105,14 +105,14 @@ x11.write_text(code)
 common = wsi / "wsi_common.c"
 code = common.read_text()
 replace_once('#include "wsi_common_private.h"\n',
-             '#include "wsi_common_private.h"\n#include "wsi_pinguplay_async.h"\n')
+             '#include "wsi_common_private.h"\n#include "wsi_pons_async.h"\n')
 replace_once("""      if (wsi->sw) {
          wsi->WaitForFences(vk_device_to_handle(dev),
                             1, &swapchain->fences[image_index], true, ~0ull);
-      }""", """      /* Pinguplay: with async present the X11 queue thread waits instead. */
-      if (wsi->sw && !pinguplay_async_present()) {
+      }""", """      /* Pons: with async present the X11 queue thread waits instead. */
+      if (wsi->sw && !pons_async_present()) {
          wsi->WaitForFences(vk_device_to_handle(dev),
                             1, &swapchain->fences[image_index], true, ~0ull);
       }""")
 common.write_text(code)
-print("pinguplay patches applied")
+print("pons patches applied")

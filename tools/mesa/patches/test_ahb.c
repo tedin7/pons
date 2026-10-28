@@ -1,6 +1,6 @@
 /*
- * Host test for the zero-upload (PINGUPLAY_AHB) path of wsi_pinguplay_fb.h.
- * A forked fake server on the abstract socket "pinguplay-ahb" stands in for the app
+ * Host test for the zero-upload (PONS_AHB) path of wsi_pons_fb.h.
+ * A forked fake server on the abstract socket "pons-ahb" stands in for the app
  * and hands out memfds instead of dma-bufs (DMA_BUF_IOCTL_SYNC fails on them, which
  * must be harmless). Run:
  *   gcc -std=gnu11 -D_GNU_SOURCE -Wall -Wextra -O2 -I. test_ahb.c -o t -lpthread && ./t
@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <sys/wait.h>
-#include "wsi_pinguplay_fb.h"
+#include "wsi_pons_fb.h"
 
 #define PAD_PX 8 /* the fake app pads rows, like a real AHardwareBuffer */
 
@@ -17,7 +17,7 @@ static pid_t start_server(int *ready_fd, bool reply_no)
 {
    int ls = socket(AF_UNIX, SOCK_STREAM, 0);
    struct sockaddr_un a = { .sun_family = AF_UNIX };
-   memcpy(a.sun_path + 1, "pinguplay-ahb", 13);
+   memcpy(a.sun_path + 1, "pons-ahb", 13);
    assert(bind(ls, (struct sockaddr *)&a, offsetof(struct sockaddr_un, sun_path) + 14) == 0);
    assert(listen(ls, 4) == 0);
    (void)ready_fd;
@@ -63,14 +63,14 @@ int main(void)
 {
    const char *path = "/tmp/pp-ahb-test";
    unlink(path);
-   setenv("PINGUPLAY_PRESENT", path, 1);
-   setenv("PINGUPLAY_AHB", "1", 1);
-   struct pinguplay_present *p = &pinguplay_present_state;
+   setenv("PONS_PRESENT", path, 1);
+   setenv("PONS_AHB", "1", 1);
+   struct pons_present *p = &pons_present_state;
 
    /* 1. No server: falls back to version 1 with the pixel area in the file. */
    uint8_t src[64 * 4 * 32];
    memset(src, 7, sizeof src);
-   assert(pinguplay_fb_present(0, 0, 64, 32, src, 64 * 4));
+   assert(pons_fb_present(0, 0, 64, 32, src, 64 * 4));
    assert(p->header->version == 1 && p->ahb_map[0] == NULL && p->ahb_fd[0] == -1);
    assert(p->map_size == 64 + 3 * 64 * 4 * 32);
    puts("fallback v1 ok");
@@ -78,8 +78,8 @@ int main(void)
    /* 2. Server up: version 2, header-only file, pixels in the memfds. */
    int unused;
    pid_t srv = start_server(&unused, false);
-   assert(pinguplay_fb_present(0, 0, 16, 8, src, 16 * 4)); /* resize forces a remap */
-   struct pinguplay_present_header *h = p->header;
+   assert(pons_fb_present(0, 0, 16, 8, src, 16 * 4)); /* resize forces a remap */
+   struct pons_present_header *h = p->header;
    assert(h->version == 2 && h->buffers == 3 && h->width == 16 && h->height == 8);
    assert(h->stride == (16 + PAD_PX) * 4 && p->map_size == 64);
    struct stat st;
@@ -87,7 +87,7 @@ int main(void)
    for (int frame = 1; frame <= 5; frame++) {
       uint8_t f[16 * 4 * 8];
       for (size_t i = 0; i < sizeof f; i++) f[i] = (uint8_t)(frame * 10 + (i % 7));
-      assert(pinguplay_fb_present(2, 3, 16, 8, f, 16 * 4));
+      assert(pons_fb_present(2, 3, 16, 8, f, 16 * 4));
       assert(h->sequence == (uint64_t)frame + 1 && h->x == 2 && h->y == 3);
       uint32_t fr = h->front;
       assert(fr < 3);
@@ -97,12 +97,12 @@ int main(void)
    }
    uint32_t before = h->front;
    uint8_t g[16 * 4 * 8] = { 0 };
-   assert(pinguplay_fb_present(0, 0, 16, 8, g, 16 * 4));
+   assert(pons_fb_present(0, 0, 16, 8, g, 16 * 4));
    assert(h->front != before && h->front != h->reading);
    puts("ahb v2 ok");
 
    /* 3. Resize remaps with fresh buffers and a new stride. */
-   assert(pinguplay_fb_present(0, 0, 32, 4, src, 64 * 4));
+   assert(pons_fb_present(0, 0, 32, 4, src, 64 * 4));
    h = p->header;
    assert(h->version == 2 && h->width == 32 && h->stride == (32 + PAD_PX) * 4 && h->sequence == 1);
    puts("ahb resize ok");
@@ -112,7 +112,7 @@ int main(void)
 
    /* 4. Server answers NO: fall back to version 1. */
    srv = start_server(&unused, true);
-   assert(pinguplay_fb_present(0, 0, 20, 4, src, 64 * 4));
+   assert(pons_fb_present(0, 0, 20, 4, src, 64 * 4));
    assert(p->header->version == 1 && p->ahb_map[0] == NULL);
    kill(srv, SIGKILL);
    waitpid(srv, NULL, 0);

@@ -4,9 +4,9 @@
 # Release tarball:  build.sh <version> <sha256>
 # Git checkout:     build.sh git <label>       (source mounted read-only at /src)
 #
-# Output: /out/mesa-<version|label>-pinguplay.tar.xz
+# Output: /out/mesa-<version|label>-pons.tar.xz
 set -eu
-PREFIX=/opt/pinguplay/mesa
+PREFIX=/opt/pons/mesa
 
 if [ "$1" = git ]; then
     LABEL="$2"
@@ -35,5 +35,5 @@ meson setup build --cross-file /build/cross-aarch64.ini \
 ninja -C build -j"$(nproc)"
 DESTDIR=/tmp/stage ninja -C build install
 aarch64-linux-gnu-strip --strip-unneeded /tmp/stage$PREFIX/lib/*.so* /tmp/stage$PREFIX/lib/*/*.so* 2>/dev/null || true
-tar -C /tmp/stage -cJf "/out/mesa-$LABEL-pinguplay.tar.xz" opt
+tar -C /tmp/stage -cJf "/out/mesa-$LABEL-pons.tar.xz" opt
 ls -la /out

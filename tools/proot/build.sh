@@ -1,9 +1,9 @@
 #!/bin/sh
-# Builds Termux's proot with the Pinguplay x86 runner patch, for the APK's jniLibs.
-# Usage (on Proxmox): build.sh  -> /root/pinguplay-work/jni/libproot.so + libproot-loader.so
+# Builds Termux's proot with the Pons x86 runner patch, for the APK's jniLibs.
+# Usage (on Proxmox): build.sh  -> /root/pons-work/jni/libproot.so + libproot-loader.so
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-WORK=/root/pinguplay-work
+WORK=/root/pons-work
 SRC=$WORK/proot-build
 TAG=v5.1.107.101
 NDK=/root/android-sdk/ndk/27.2.12479018
@@ -21,7 +21,7 @@ mkdir -p "$SRC/deps/lib"
 cp "$WORK/jni/libtalloc.so" "$WORK/jni/libandroid-shmem.so" "$SRC/deps/lib/"
 
 # Extra flags go through the environment: the makefile appends to them with +=.
-CPPFLAGS="-I$TERMUX/include -DARG_MAX=131072 -DVERSION=\\\"5.1.107-pinguplay\\\"" \
+CPPFLAGS="-I$TERMUX/include -DARG_MAX=131072 -DVERSION=\\\"5.1.107-pons\\\"" \
 CFLAGS="-Wno-implicit-function-declaration" \
 LDFLAGS="-L$SRC/deps/lib" \
 make -C "$SRC/src" -j"$(nproc)" \

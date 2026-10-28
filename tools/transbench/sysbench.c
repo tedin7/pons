@@ -1,5 +1,5 @@
 /*
- * sysbench: cost of one system call, in ns, as a program inside Pinguplay sees it.
+ * sysbench: cost of one system call, in ns, as a program inside Pons sees it.
  * Built for arm64 (native) and x86_64 (through Box64), so the suite separates what
  * proot adds (path calls stop the process for translation) from what Box64 adds.
  *

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Kept for older app versions and docs: Crusader Kings III through its profile.
+exec pons-game ck3 "$@"

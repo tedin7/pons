@@ -1,0 +1,36 @@
+#!/bin/sh
+# pons-suite: quick standard measurements of each layer, no screen needed.
+# One "layer test value unit" line per result, so runs can be diffed and charted:
+#   box64    <workload>  x86 speed as % of native arm64 (transbench, best of 3)
+#   bridge   <call>      ns per call into libc/libm, native and from x86 code
+#   syscall  <call>      ns per call, native and through Box64 (sysbench), with and
+#                        without the fast path
+# Takes about a minute. Games are measured separately (tools/dev/pp-bench.sh).
+set -u
+B=/opt/pons/bench
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+best_of() { cat "$@" | awk '!($1 in t) || $2 < t[$1] {t[$1] = $2} END {for (k in t) print k, t[k]}' | sort; }
+
+for i in 1 2 3; do
+    "$B/transbench-arm64" > "$TMP/n$i" 2>/dev/null
+    box64 "$B/transbench-x86_64" > "$TMP/x$i" 2>/dev/null
+done
+best_of "$TMP"/n? > "$TMP/native"
+best_of "$TMP"/x? > "$TMP/x86"
+join "$TMP/native" "$TMP/x86" | awk '{printf "box64 %s %.0f %%\n", $1, 100 * $2 / $3}'
+join "$TMP/native" "$TMP/x86" | awk '{s += log($2 / $3); n++} END {if (n) printf "box64 score %.0f %%\n", 100 * exp(s / n)}'
+
+# Cost of one call from x86 code into a native library function (Box64's bridge).
+"$B/bridgecost-arm64" 2>/dev/null | awk '{printf "bridge %s-native %s ns\n", $1, $2}'
+box64 "$B/bridgecost-x86_64" 2>/dev/null | awk '{printf "bridge %s-box64 %s ns\n", $1, $2}'
+
+"$B/sysbench-arm64" | awk '{printf "syscall %s-native %s ns\n", $1, $2}'
+box64 "$B/sysbench-x86_64" 2>/dev/null | awk '{printf "syscall %s-box64 %s ns\n", $1, $2}'
+# Same calls through the fast path (file calls resolved in-process, no proot stop).
+FAST=/opt/pons/lib/libpons-fastpath.so
+if [ -n "${PONS_FASTPATH_ROOT:-}" ] && [ -f "$FAST" ]; then
+    LD_PRELOAD="$FAST" "$B/sysbench-arm64" | awk '{printf "syscall %s-native-fast %s ns\n", $1, $2}'
+    LD_PRELOAD="$FAST" box64 "$B/sysbench-x86_64" 2>/dev/null | awk '{printf "syscall %s-box64-fast %s ns\n", $1, $2}'
+fi

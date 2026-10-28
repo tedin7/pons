@@ -5,7 +5,7 @@ LOG="${PP_MONITOR_LOG:-/tmp/pp-monitor.log}"
 END=$(( $(date +%s) + $1 ))
 prev=""; pt=""
 while [ "$(date +%s)" -lt "$END" ]; do
-  out=$($S shell 'P=$(pidof ck3 | cut -d" " -f1); F=$(run-as io.github.pinguplay od -A n -t u8 -j 32 -N 8 cache/proot-tmp/pinguplay-present 2>/dev/null | tr -d " "); echo "F $F $(date +%s.%N)"; [ -n "$P" ] && top -H -b -n 1 -d 1 -p $P -o %CPU,CMD 2>/dev/null | tail -n +6 | sort -rn | head -5 | awk "{printf \"T %s:%s\n\", \$2, \$1}"; for z in /sys/class/thermal/thermal_zone*; do echo "Z $(cat $z/type) $(cat $z/temp)"; done 2>/dev/null; grep -E "MemAvailable" /proc/meminfo; dumpsys window | grep -m1 mCurrentFocus | grep -c pinguplay' 2>/dev/null)
+  out=$($S shell 'P=$(pidof ck3 | cut -d" " -f1); F=$(run-as io.github.pons od -A n -t u8 -j 32 -N 8 cache/proot-tmp/pons-present 2>/dev/null | tr -d " "); echo "F $F $(date +%s.%N)"; [ -n "$P" ] && top -H -b -n 1 -d 1 -p $P -o %CPU,CMD 2>/dev/null | tail -n +6 | sort -rn | head -5 | awk "{printf \"T %s:%s\n\", \$2, \$1}"; for z in /sys/class/thermal/thermal_zone*; do echo "Z $(cat $z/type) $(cat $z/temp)"; done 2>/dev/null; grep -E "MemAvailable" /proc/meminfo; dumpsys window | grep -m1 mCurrentFocus | grep -c pons' 2>/dev/null)
   f=$(echo "$out" | awk '/^F /{print $2, $3}')
   set -- $f; fr=$1; t=$2
   fps=0; [ -n "$prev" ] && fps=$(awk -v a="$prev" -v b="$fr" -v t1="$pt" -v t2="$t" 'BEGIN{printf "%.1f", (b-a)/(t2-t1)}')

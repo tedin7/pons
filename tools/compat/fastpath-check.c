@@ -1,6 +1,6 @@
 /*
  * fastpath-check: prints what common file calls return for a set of guest paths.
- * Run once plainly and once with libpinguplay-fastpath.so preloaded, under the
+ * Run once plainly and once with libpons-fastpath.so preloaded, under the
  * same proot: the two outputs must be identical (tools/dev/pp-fastpath-check.sh).
  */
 #define _GNU_SOURCE

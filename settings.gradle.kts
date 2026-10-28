@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Pinguplay"
+rootProject.name = "Pons"
 include(":app")

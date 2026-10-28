@@ -13,4 +13,4 @@
 
 Source for each component is linked from its build script in `tools/`.
 The Steam client is downloaded by the user's device from Valve and is covered by the
-Steam Subscriber Agreement; Pinguplay does not redistribute it.
+Steam Subscriber Agreement; Pons does not redistribute it.
