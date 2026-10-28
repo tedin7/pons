@@ -41,7 +41,7 @@ object LinuxSession {
         stop()
         val paths = LinuxPaths(context)
         try {
-            installMissing(context, paths)
+            installMissing(context, paths, program)
             startScreen(paths, DisplaySettings(context).resolution)
             startInput(paths)
             running = true
@@ -66,16 +66,16 @@ object LinuxSession {
         running = false
     }
 
-    private fun installMissing(context: Context, paths: LinuxPaths) {
+    private fun installMissing(context: Context, paths: LinuxPaths, program: String) {
         val installer = ComponentInstaller(context, paths)
         installer.missing(Components.ALL).forEach { component ->
             emit("Installo ${component.id}…")
             installer.install(component) { status -> emit("  $status") }
         }
         val packages = PackageSetup(context, paths)
-        if (!packages.isDone()) {
-            emit("Installo i pacchetti Linux (solo la prima volta)…")
-            packages.run { line -> emit("  $line") }
+        PackageSetup.groupsFor(program).filterNot(packages::isDone).forEach { group ->
+            emit("Installo i pacchetti Linux: ${group.name.lowercase()} (solo la prima volta)…")
+            packages.install(group) { line -> emit("  $line") }
         }
     }
 
@@ -83,6 +83,7 @@ object LinuxSession {
         File(paths.tmp, ".X11-unix/X0").delete()
         File(paths.tmp, ".X0-lock").delete()
         paths.framebuffer.delete()
+        paths.present.delete()
         launch(paths,
             "Xvfb ${ProotCommand.DISPLAY} -screen 0 ${resolution.width}x${resolution.height}x24 " +
                 "-fbdir /tmp -nolisten tcp -ac +extension GLX", "xvfb")

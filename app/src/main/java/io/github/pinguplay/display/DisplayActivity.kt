@@ -17,7 +17,8 @@ class DisplayActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        renderer = FramebufferRenderer(LinuxPaths(this).framebuffer, DisplaySettings(this).sharpness)
+        val paths = LinuxPaths(this)
+        renderer = FramebufferRenderer(paths.framebuffer, paths.present, DisplaySettings(this).sharpness)
         surface = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
             setRenderer(renderer)
@@ -39,16 +40,16 @@ class DisplayActivity : Activity() {
         super.onPause()
     }
 
-    /** Maps a touch point on the view to Linux screen pixels, or null outside the image. */
+    /** Maps a touch point on the view to X screen pixels, or null outside the image. */
     private fun toScreen(x: Float, y: Float): Pair<Int, Int>? {
-        val fb = renderer.framebuffer ?: return null
+        val area = renderer.shown ?: return null
         val (vx, vyFromBottom, vw, vh) = renderer.viewport.toList()
         if (vw == 0 || vh == 0) return null
         val vyTop = surface.height - vyFromBottom - vh
-        val sx = ((x - vx) / vw * fb.width).toInt()
-        val sy = ((y - vyTop) / vh * fb.height).toInt()
-        if (sx !in 0 until fb.width || sy !in 0 until fb.height) return null
-        return sx to sy
+        val sx = ((x - vx) / vw * area.width).toInt()
+        val sy = ((y - vyTop) / vh * area.height).toInt()
+        if (sx !in 0 until area.width || sy !in 0 until area.height) return null
+        return (area.x + sx) to (area.y + sy)
     }
 
     private fun hideSystemBars() {

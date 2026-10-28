@@ -32,11 +32,12 @@ object Components {
 
     val MESA = Component(
         id = "mesa",
-        // Mesa main (27.0-devel): Adreno 830 entries, UBWC 5, Pinguplay direct present.
-        version = "main-f01e9b0-pp1",
-        sizeBytes = 7_130_220,
-        sha256 = "5b9ad966351dafbe1b761fef87a8f5740197a3bff1aa2273b4bee41ea2f4b8d2",
-        url = "${BASE}mesa-main-f01e9b0-pp1-pinguplay.tar.xz",
+        // Mesa main (27.0-devel): Adreno 830 entries, UBWC 5, Pinguplay direct present
+        // (triple-buffered frames handed to the app without the X server).
+        version = "main-f01e9b0-pp2",
+        sizeBytes = 7_128_800,
+        sha256 = "5461b9c4df6a6c1489f92f74c33c9611d670443a4c209e40979bdd2a6468eb52",
+        url = "${BASE}mesa-main-f01e9b0-pp2-pinguplay.tar.xz",
         replaces = "opt/pinguplay/mesa",
     )
 

@@ -18,9 +18,11 @@ object ProotCommand {
         "MESA_LOADER_DRIVER_OVERRIDE=zink",
         "TU_DEBUG=noconform",
         // Xvfb has no DRI3, so Vulkan presents through the CPU path; our Mesa patch
-        // then writes frames straight into the screen file the app shows.
+        // then hands finished frames straight to the app, skipping the X server.
         "MESA_VK_WSI_DEBUG=sw",
-        "PINGUPLAY_XVFB_FB=/tmp/Xvfb_screen0",
+        "PINGUPLAY_PRESENT=/tmp/pinguplay-present",
+        // Above the panel's useful rate frames only cost heat the CPU needs.
+        "PINGUPLAY_MAX_FPS=120",
         "BOX64_LOG=0",
     )
 

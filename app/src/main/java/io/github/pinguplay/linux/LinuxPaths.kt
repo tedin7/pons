@@ -15,4 +15,7 @@ class LinuxPaths(context: Context) {
     val shm: File = File(context.cacheDir, "shm").apply { mkdirs() }
 
     val framebuffer: File get() = File(tmp, "Xvfb_screen0")
+
+    /** Finished game frames from our Mesa (direct present), as /tmp/pinguplay-present. */
+    val present: File get() = File(tmp, "pinguplay-present")
 }

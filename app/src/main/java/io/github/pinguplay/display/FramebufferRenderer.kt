@@ -10,17 +10,28 @@ import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
 /**
- * Draws the Xvfb screen, letterboxed, uploading it as a texture every frame.
+ * Draws the Linux screen, letterboxed. Games using our Mesa publish finished frames
+ * through [PresentBuffer] (no X server copy, no tearing); while those keep coming we
+ * show them, otherwise we show the Xvfb desktop.
  * Linux usually renders below panel resolution; the shader upscales it with a
  * Catmull-Rom filter plus a light unsharp mask so text and map borders stay crisp.
  */
 class FramebufferRenderer(
     private val source: File,
+    presentFile: File,
     private val sharpness: Float,
 ) : GLSurfaceView.Renderer {
 
-    @Volatile var framebuffer: XvfbFramebuffer? = null
+    /** What is on screen now, in X screen pixels, for touch mapping. */
+    data class ShownArea(val x: Int, val y: Int, val width: Int, val height: Int)
+
+    @Volatile var shown: ShownArea? = null
         private set
+
+    private var framebuffer: XvfbFramebuffer? = null
+    private val present = PresentBuffer(presentFile)
+    private var presentSequence = 0L
+    private var presentSeenAt = 0L
 
     /** Where the Linux screen sits inside the view, for touch mapping. */
     @Volatile var viewport = IntArray(4)
@@ -57,28 +68,59 @@ class FramebufferRenderer(
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
+        val area = uploadPresentFrame() ?: uploadDesktop() ?: return
+        shown = area
+        draw(area.width, area.height)
+    }
+
+    /** Uploads a new game frame; keeps showing the last one while frames keep coming. */
+    private fun uploadPresentFrame(): ShownArea? {
+        val now = System.nanoTime()
+        val frame = present.acquire(presentSequence)
+        if (frame != null) {
+            try {
+                upload(frame.width, frame.height, frame.pixels)
+            } finally {
+                present.release()
+            }
+            presentSequence = frame.sequence
+            presentSeenAt = now
+            return ShownArea(frame.x, frame.y, frame.width, frame.height)
+        }
+        val last = shown
+        val fresh = now - presentSeenAt < PRESENT_TIMEOUT_NS
+        return if (fresh && last != null && presentSequence != 0L) last else null
+    }
+
+    private fun uploadDesktop(): ShownArea? {
         if (frames++ % REOPEN_CHECK_FRAMES == 0) dropIfReplaced()
         val fb = framebuffer ?: XvfbFramebuffer.open(source)?.also {
             framebuffer = it
             sourceInode = inodeOf(source)
-        } ?: return
-        if (fb.bytesPerLine != fb.width * 4) return
+        } ?: return null
+        if (fb.bytesPerLine != fb.width * 4) return null
+        upload(fb.width, fb.height, fb.pixels)
+        return ShownArea(0, 0, fb.width, fb.height)
+    }
 
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
-        fb.pixels.position(0)
-        if (textureSize != fb.width to fb.height) {
-            GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, fb.width, fb.height, 0,
-                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, fb.pixels)
-            textureSize = fb.width to fb.height
+    private fun upload(width: Int, height: Int, pixels: ByteBuffer) {
+        pixels.position(0)
+        if (textureSize != width to height) {
+            GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D, 0, GLES20.GL_RGBA, width, height, 0,
+                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixels)
+            textureSize = width to height
         } else {
-            GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, fb.width, fb.height,
-                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, fb.pixels)
+            GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, width, height,
+                GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixels)
         }
+    }
 
-        applyLetterbox(fb.width, fb.height)
+    private fun draw(width: Int, height: Int) {
+        applyLetterbox(width, height)
         GLES20.glUseProgram(program)
         GLES20.glUniform2f(GLES20.glGetUniformLocation(program, "uTexSize"),
-            fb.width.toFloat(), fb.height.toFloat())
+            width.toFloat(), height.toFloat())
         GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uSharp"), sharpness)
         val position = GLES20.glGetAttribLocation(program, "aPos")
         quad.position(0)
@@ -125,6 +167,8 @@ class FramebufferRenderer(
 
     companion object {
         private const val REOPEN_CHECK_FRAMES = 30
+        /** A game that stops presenting for this long hands the screen back to the desktop. */
+        private const val PRESENT_TIMEOUT_NS = 500_000_000L
 
         /** x, y, u, v for a full-viewport strip; v is flipped because X rows go top-down. */
         private val QUAD = floatArrayOf(

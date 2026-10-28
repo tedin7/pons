@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "io.github.pinguplay"
-        minSdk = 29
+        minSdk = 33
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
