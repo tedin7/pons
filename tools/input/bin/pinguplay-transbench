@@ -1,0 +1,69 @@
+#!/bin/sh
+# Measures how fast Box64 runs x86 code on this device and picks the fastest safe
+# settings. Score = geometric mean, over the four workloads, of native time / x86 time
+# (100 = as fast as native arm64). A setting that changes results is rejected.
+# The winner is saved to ~/.config/pinguplay/box64-tuned.env, used by pinguplay-steam.
+set -eu
+BENCH=/opt/pinguplay/bench
+OUT="$HOME/.config/pinguplay"
+mkdir -p "$OUT"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+# Best (lowest) time per workload over several result files -> "name ms" lines.
+best_of() { cat "$@" | awk '!($1 in t) || $2 < t[$1] {t[$1] = $2} END {for (k in t) print k, t[k]}' | sort; }
+
+# Geometric-mean speed of a result file relative to native, in percent.
+score() {
+    join "$TMP/native.best" "$1" | awk '{s += log($2 / $3); n++} END {printf "%.0f", 100 * exp(s / n)}'
+}
+
+run_case() {  # name, env settings...
+    name=$1; shift
+    ok=0
+    for attempt in 1 2; do
+        if env "$@" box64 "$BENCH/transbench-x86_64" >"$TMP/$name.$attempt" 2>"$TMP/$name.err"; then
+            ok=$((ok + 1))
+        else
+            rm -f "$TMP/$name.$attempt"
+        fi
+    done
+    [ "$ok" -gt 0 ] || { echo "  $name: si è bloccato, scartato"; return; }
+    grep checksum "$TMP/$name.err" > "$TMP/$name.sum" || true
+    if [ "$name" = default ]; then
+        cp "$TMP/$name.sum" "$TMP/reference.sum"
+    elif ! cmp -s "$TMP/$name.sum" "$TMP/reference.sum"; then
+        echo "  $name: risultati diversi, scartato"; return
+    fi
+    best_of "$TMP"/"$name".[12] > "$TMP/$name.best"
+    s=$(score "$TMP/$name.best")
+    printf "  %-15s %3s%% del nativo   %s\n" "$name" "$s" "$(tr '\n' ' ' < "$TMP/$name.best")"
+    echo "$s $name $*" >> "$TMP/results"
+}
+
+echo "== Nativo ARM (riferimento = 100%)"
+for i in 1 2 3; do "$BENCH/transbench-arm64" > "$TMP/native.$i" 2>/dev/null; done
+best_of "$TMP"/native.[123] > "$TMP/native.best"
+echo "  $(tr '\n' ' ' < "$TMP/native.best")"
+
+echo "== x86 tradotto da Box64"
+export BOX64_LOG=0 BOX64_NOBANNER=1 BOX64_DYNACACHE=0
+run_case default
+run_case bigblock3      BOX64_DYNAREC_BIGBLOCK=3
+run_case callret2-pause BOX64_DYNAREC_CALLRET=2 BOX64_DYNAREC_PAUSE=1
+run_case safeflags0     BOX64_DYNAREC_SAFEFLAGS=0
+run_case weakbarrier2   BOX64_DYNAREC_WEAKBARRIER=2
+run_case forward1024    BOX64_DYNAREC_FORWARD=1024
+run_case combo          BOX64_DYNAREC_BIGBLOCK=3 BOX64_DYNAREC_SAFEFLAGS=0 BOX64_DYNAREC_WEAKBARRIER=2 BOX64_DYNAREC_FORWARD=1024 BOX64_DYNAREC_PAUSE=1
+
+WINNER=$(sort -rn "$TMP/results" | head -1)
+BASE=$(awk '$2 == "default" {print $1}' "$TMP/results")
+# Runs vary by a few percent; only move away from the defaults for a clear win.
+if [ -z "$BASE" ] || [ "${WINNER%% *}" -lt $((BASE + 3)) ]; then
+    echo "== Migliore: impostazioni standard (nessuna vince di almeno 3 punti)"
+    : > "$OUT/box64-tuned.env"
+else
+    echo "== Migliore: $WINNER"
+    echo "$WINNER" | cut -d' ' -f3- | tr ' ' '\n' | grep = | sed 's/^/export /' > "$OUT/box64-tuned.env" || true
+fi
+echo "  salvato in $OUT/box64-tuned.env"

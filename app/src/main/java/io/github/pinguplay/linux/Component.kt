@@ -42,18 +42,19 @@ object Components {
 
     val BOX64 = Component(
         id = "box64",
-        version = "v0.4.4",
-        sizeBytes = 8_512_536,
-        sha256 = "2d7a20df694b493665e5e11362c3ffcb000f8234c76053ff0c377b9b5461772c",
-        url = "${BASE}box64-v0.4.4-pinguplay.tar.xz",
+        // Box64 main after v0.4.4: LRCPC/LRCPC2 use on Arm64, many dynarec fixes.
+        version = "main-11a20e37",
+        sizeBytes = 8_528_000,
+        sha256 = "ac346d7e98fd34c60b11c9124e9e9ec3979c6c096d5e0a1adf31d48b085e4b38",
+        url = "${BASE}box64-main-11a20e37-pinguplay.tar.xz",
     )
 
     val TOOLS = Component(
         id = "tools",
-        version = "3",
-        sizeBytes = 3_684,
-        sha256 = "7a58df198a69fa9ea6fa23d103a6d3ee2385071783c99898be27d9e2444bb7c8",
-        url = "${BASE}pinguplay-tools-3.tar.xz",
+        version = "5",
+        sizeBytes = 19_424,
+        sha256 = "b6496a201eef7035815c33a31c53891fbadb71fcb34d0aa9953226d5377285a7",
+        url = "${BASE}pinguplay-tools-5.tar.xz",
     )
 
     /** Order matters: the rootfs must exist before anything unpacks into it. */

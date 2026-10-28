@@ -88,7 +88,8 @@ class MainActivity : Activity() {
     companion object {
         private val PROGRAMS = listOf(
             "Cubo Vulkan" to "vkcube --wsi xcb",
-            "Prova velocità" to "pinguplay-bench",
+            "Prova grafica" to "pinguplay-bench",
+            "Ottimizza traduzione" to "pinguplay-transbench",
             "Steam" to "pinguplay-steam",
         )
     }
