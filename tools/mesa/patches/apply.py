@@ -8,6 +8,7 @@ src = pathlib.Path(sys.argv[1])
 here = pathlib.Path(__file__).resolve().parent
 wsi = src / "src/vulkan/wsi"
 shutil.copy(here / "wsi_pinguplay_fb.h", wsi / "wsi_pinguplay_fb.h")
+shutil.copy(here / "wsi_pinguplay_async.h", wsi / "wsi_pinguplay_async.h")
 
 x11 = wsi / "wsi_common_x11.c"
 code = x11.read_text()
@@ -21,7 +22,7 @@ def replace_once(old: str, new: str) -> None:
 
 
 replace_once('#include "wsi_common_queue.h"\n',
-             '#include "wsi_common_queue.h"\n#include "wsi_pinguplay_fb.h"\n')
+             '#include "wsi_common_queue.h"\n#include "wsi_pinguplay_fb.h"\n#include "wsi_pinguplay_async.h"\n')
 
 replace_once("""   bool                                         has_mit_shm;
    bool                                         has_async_may_tear;""",
@@ -86,5 +87,32 @@ replace_once("""   uint64_t max_req_len = xcb_get_maximum_request_length(chain->
       /* Written straight into the screen the app shows. */
    } else if (image->rectangle_count > 0) {""")
 
+replace_once("""   assert(!chain->base.image_info.explicit_sync);
+   struct x11_image *image = &chain->images[image_index];
+""", """   assert(!chain->base.image_info.explicit_sync);
+   struct x11_image *image = &chain->images[image_index];
+
+   /* Pinguplay async present: the application thread no longer waited for the
+    * GPU, so wait here, in the X11 queue thread, before reading the frame. */
+   if (pinguplay_async_present()) {
+      chain->base.wsi->WaitForFences(chain->base.device, 1,
+                                     &chain->base.fences[image_index], true, UINT64_MAX);
+   }
+""")
+
 x11.write_text(code)
+
+common = wsi / "wsi_common.c"
+code = common.read_text()
+replace_once('#include "wsi_common_private.h"\n',
+             '#include "wsi_common_private.h"\n#include "wsi_pinguplay_async.h"\n')
+replace_once("""      if (wsi->sw) {
+         wsi->WaitForFences(vk_device_to_handle(dev),
+                            1, &swapchain->fences[image_index], true, ~0ull);
+      }""", """      /* Pinguplay: with async present the X11 queue thread waits instead. */
+      if (wsi->sw && !pinguplay_async_present()) {
+         wsi->WaitForFences(vk_device_to_handle(dev),
+                            1, &swapchain->fences[image_index], true, ~0ull);
+      }""")
+common.write_text(code)
 print("pinguplay patches applied")

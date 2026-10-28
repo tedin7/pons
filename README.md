@@ -82,3 +82,21 @@ The Linux x86_64 build runs through Box64 inside Pinguplay, signed in through th
 Steam client: main menu at 31 fps at 1600×1132 (Vulkan on Turnip, Adreno 830).
 During loading and at the menu the tablet's skin reached 54 °C (Android thermal
 status 2 of 6, throttling starts at 60 °C), so a 30 fps cap is recommended.
+
+### Profiling CK3 and async present (2026-10-28)
+
+Profiled on the tablet with `tools/dev/pp-monitor-host.sh` (frames from the present
+buffer, per-thread CPU from `top -H`, temperatures from `/sys/class/thermal`):
+at 21 fps no game thread was saturated (main 40 %, render 30 %). Mesa's software
+present waited for the GPU inside `vkQueuePresentKHR`, so CPU and GPU took turns.
+Mesa pp5 moves that wait to the X11 queue thread (`wsi_pinguplay_async.h`):
+
+| CK3 1600×1132, uncapped | pp4 (sync) | pp5 (async) |
+| --- | --- | --- |
+| main menu | 31 fps | 60 fps (game's own cap) |
+| map, paused, event open | 21 fps | 37 fps |
+| map, running at speed 5 | — | 41–43 fps |
+
+Uncapped, CPU and GPU sit at 75–77 °C; the 30 fps default of `pinguplay-ck3` is
+reached with headroom. At game start, speed 5 advances roughly a month of game time
+in a few seconds.

@@ -1,0 +1,70 @@
+#!/bin/sh
+# pinguplay-monitor [process-name] [interval-seconds]
+# One line per interval to /tmp/pinguplay-stats.log (and stdout):
+#   time fps cpu% rss_mb cpu_max_c gpu_max_c | busiest threads (name:cpu%)
+# fps comes from the direct-present frame counter, threads from /proc/<pid>/task,
+# temperatures from /sys/class/thermal. Cheap: a handful of processes per sample.
+set -u
+NAME="${1:-ck3}"
+INTERVAL="${2:-1}"
+LOG=/tmp/pinguplay-stats.log
+PRESENT=/tmp/pinguplay-present
+TICKS=$(getconf CLK_TCK)
+
+frames() { od -A n -t u8 -j 32 -N 8 "$PRESENT" 2>/dev/null | tr -d ' ' || echo 0; }
+
+find_pid() {
+    for f in /proc/[0-9]*/comm; do
+        [ "$(cat "$f" 2>/dev/null)" = "$NAME" ] && { p=${f#/proc/}; echo "${p%/comm}"; return; }
+    done
+}
+
+# "tid name ticks" for every thread of $1, in one awk run.
+thread_ticks() {
+    awk '{ open = index($0, "("); close = index($0, ") ");
+           name = substr($0, open + 1, close - open - 1); gsub(/ /, "_", name);
+           split(substr($0, close + 2), f, " ");
+           print $1, name, f[12] + f[13] }' /proc/"$1"/task/*/stat 2>/dev/null
+}
+
+temps() {
+    for z in /sys/class/thermal/thermal_zone*; do
+        printf '%s %s\n' "$(cat "$z/type" 2>/dev/null)" "$(cat "$z/temp" 2>/dev/null)"
+    done | awk '/^cpu/ { if ($2 > c) c = $2 } /^gpu/ { if ($2 > g) g = $2 }
+                END { printf "%.1f %.1f", c / 1000, g / 1000 }'
+}
+
+: > "$LOG"
+prev_frames=$(frames)
+prev_threads=""
+prev_time=$(date +%s.%N)
+while :; do
+    sleep "$INTERVAL"
+    pid=$(find_pid)
+    now=$(date +%s.%N)
+    cur_frames=$(frames)
+    cur_threads=$( [ -n "$pid" ] && thread_ticks "$pid" )
+    rss=$( [ -n "$pid" ] && awk '/^VmRSS/ { printf "%d", $2 / 1024 }' /proc/"$pid"/status 2>/dev/null )
+    line=$(printf '%s\n===\n%s\n' "$prev_threads" "$cur_threads" | awk \
+        -v pf="$prev_frames" -v cf="$cur_frames" -v pt="$prev_time" -v ct="$now" \
+        -v hz="$TICKS" -v rss="${rss:-0}" -v temps="$(temps)" '
+        /^===$/ { second = 1; next }
+        !second { before[$1] = $3; next }
+        { if ($1 in before) { used[$2 "#" $1] = $3 - before[$1]; total += $3 - before[$1] } }
+        END {
+            dt = ct - pt; split(temps, t, " ")
+            printf "%s fps=%.1f cpu=%.0f%% rss=%dMB cpu=%.0fC gpu=%.0fC |", \
+                strftime("%H:%M:%S"), (cf - pf) / dt, 100 * total / hz / dt, rss, t[1], t[2]
+            for (n = 0; n < 6; n++) {
+                best = ""; max = -1
+                for (k in used) if (used[k] > max) { max = used[k]; best = k }
+                if (best == "" || max <= 0) break
+                name = best; sub(/#.*/, "", name)
+                printf " %s:%.0f", name, 100 * max / hz / dt
+                delete used[best]
+            }
+            printf "\n"
+        }')
+    echo "$line" | tee -a "$LOG"
+    prev_frames=$cur_frames; prev_threads=$cur_threads; prev_time=$now
+done
