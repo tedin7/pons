@@ -15,15 +15,31 @@ way they do on a Linux PC.
 ```
 Android app (Kotlin)
  ├─ LinuxSessionService   foreground service: keeps Linux running and online
- ├─ DisplayActivity       shows the Linux screen, touch acts as a mouse
+ ├─ DisplayActivity       draws game frames, touch acts as a mouse
+ │   ├─ AhbFrames         allocates Android graphics buffers (AHardwareBuffer) and
+ │   │                    hands their dma-buf fds to Mesa over a unix socket
+ │   └─ FramebufferRenderer  samples them as GL textures (no upload), upscales with
+ │                        Catmull-Rom + sharpening; redraws only on a new frame,
+ │                        panel at 60 Hz so 30 fps frames last exactly 2 refreshes
  └─ proot (patched)       runs Debian without root
      └─ Debian trixie arm64
-         ├─ Xvfb                  the Linux screen (framebuffer shared with the app)
+         ├─ Xvfb                  the Linux desktop (fallback when no game presents)
          ├─ pinguplay-input       turns touch into X11 mouse/keys (XTEST)
-         ├─ Mesa 26 Turnip + Zink Vulkan and OpenGL on Adreno (Android KGSL backend)
-         ├─ Box64                 runs x86/x86_64 Linux programs on arm64
-         └─ Steam (arm64 beta)    downloads and launches your games
+         ├─ Mesa main Turnip+Zink Vulkan and OpenGL on Adreno (Android KGSL backend);
+         │                        full-screen frames go straight into the app's buffers
+         ├─ Box64                 runs x86/x86_64 Linux programs on arm64; saves its
+         │                        translation cache while running (games get killed)
+         └─ Steam (arm64 beta)    signs games in; its web UI is frozen during play
 ```
+
+One game frame, end to end:
+
+1. The game (x86_64) runs under Box64; its Vulkan calls go to Turnip on the GPU.
+2. Mesa's present copies the finished frame into one of three Android buffers
+   (`tools/mesa/patches/wsi_pinguplay_fb.h`, header version 2) and publishes its index
+   in a 64-byte header file, with counters of frames that came more than 50/100 ms late.
+3. The app sees the new sequence number on the next vsync, samples that buffer as a
+   texture and scales it to the panel. No pixel crosses the CPU on the app side.
 
 - **x86 games without binfmt.** Linux normally needs root to hand foreign binaries to a
   translator. Our proot patch (`tools/proot/0001-x86-runner.patch`) treats an x86 ELF like
@@ -100,3 +116,25 @@ Mesa pp5 moves that wait to the X11 queue thread (`wsi_pinguplay_async.h`):
 Uncapped, CPU and GPU sit at 75–77 °C; the 30 fps default of `pinguplay-ck3` is
 reached with headroom. At game start, speed 5 advances roughly a month of game time
 in a few seconds.
+
+### Zero-upload frames and a hands-off benchmark (2026-10-28)
+
+`tools/dev/pp-bench.sh <label> [seconds] [program]` measures one run over adb without
+touching the tablet: it waits for the tablet to cool, restores a pinned CK3 save,
+starts the game, waits for the game's own "In Game" log line, then samples every
+second on the tablet (frames, late frames, thermal HAL temperatures, free memory),
+snapshots `top` halfway, screenshots the end and appends a row to a results table.
+`pp-bench-loop.sh <runs> ...` repeats it. The app must stay in front (Android cuts
+the network of background apps); the script gives up after 15 s otherwise.
+
+| CK3 map, 30 fps cap, 90 s | file + upload (pp5) | zero-upload (pp7) |
+| --- | --- | --- |
+| average fps | 29.3 | 30.0 |
+| frames late > 50 ms, per minute | 31.2 | 0.0 |
+| frames late > 100 ms, per minute | 4.1 | 0.0 |
+| lowest free memory | 411 MB | 1239 MB |
+
+With Steam's web helper frozen during play, the map run kept 1704 MB free. Observer
+mode at speed 5 (the heaviest case): 30.0 fps, 0.4 late frames per minute, skin
+54 °C (it reached 62 °C before the freeze). Loading the save takes 128–145 s, the same
+with or without Box64's translation cache, so translation is not what loading waits on.
