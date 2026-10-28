@@ -24,6 +24,11 @@ static void show_stat(const char *what, const char *path, int r, const struct st
         printf("%s %s err=%d\n", what, path, errno);
 }
 
+static int cmp(const void *a, const void *b)
+{
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
 int main(void)
 {
     static const char *const paths[] = {
@@ -69,6 +74,27 @@ int main(void)
     int count = 0;
     if (d) { while (readdir(d)) count++; closedir(d); }
     printf("opendir /etc %d\n", count);
+    /* Faked hard links (proot link2symlink) must list with their target's type;
+     * entries sorted so the order of the kernel does not matter. */
+    char *names[4096];
+    int nn = 0;
+    d = opendir("/var/lib/dpkg");
+    if (d) {
+        struct dirent *e;
+        while ((e = readdir(d)) && nn < 4096) {
+            char line[512];
+            snprintf(line, sizeof line, "dirent /var/lib/dpkg %s type=%d", e->d_name, e->d_type);
+            names[nn++] = strdup(line);
+        }
+        rewinddir(d);
+        int again = 0;
+        while (readdir(d)) again++;
+        printf("rewinddir /var/lib/dpkg %d %d\n", nn, again);
+        closedir(d);
+    }
+    qsort(names, nn, sizeof *names, cmp);
+    for (int i = 0; i < nn; i++)
+        printf("%s\n", names[i]);
     struct statvfs vfs;
     printf("statvfs / %s bsize=%lu\n", statvfs("/", &vfs) == 0 ? "ok" : strerror(errno), vfs.f_bsize);
     FILE *fp = fopen("/etc/os-release", "r");

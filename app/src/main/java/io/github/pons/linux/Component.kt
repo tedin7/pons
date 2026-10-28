@@ -36,10 +36,10 @@ object Components {
         // (triple-buffered full-screen frames handed to the app without the X server), softpipe so
         // Xvfb can offer GLX while games render through Zink on the GPU, and async software
         // present (the GPU wait moved off the game's thread).
-        version = "main-f01e9b0-pp8",
-        sizeBytes = 7_201_364,
-        sha256 = "b5d618bbe912bd8d5e1449a078c7ec5c9b65ca100d5dbe93ce06b06fe0ec3e7b",
-        url = "${BASE}mesa-main-f01e9b0-pp8-pons.tar.xz",
+        version = "main-f01e9b0-pp10",
+        sizeBytes = 7_205_888,
+        sha256 = "abc4782241d750e72ae1d15b9be2e156ac724b5fce05ec59a7298035fed93259",
+        url = "${BASE}mesa-main-f01e9b0-pp10-pons.tar.xz",
         replaces = "opt/pons/mesa",
     )
 
@@ -56,10 +56,10 @@ object Components {
 
     val TOOLS = Component(
         id = "tools",
-        version = "25",
-        sizeBytes = 257_900,
-        sha256 = "8e3d0413ac0407396afe091464949d0bed6edf4b3ff67729123bd9a51f5279de",
-        url = "${BASE}pons-tools-25.tar.xz",
+        version = "26",
+        sizeBytes = 258_780,
+        sha256 = "c0972a468f7dd992454e72fcef3c9661e017cd9b4a38d7e96dd8eb8b7632e5dd",
+        url = "${BASE}pons-tools-26.tar.xz",
     )
 
     /** Order matters: the rootfs must exist before anything unpacks into it. */

@@ -60,6 +60,9 @@ object ProotCommand {
             // without proot stops); programs opt in by preloading it.
             "PONS_FASTPATH_ROOT=${paths.rootfs.path}",
             "PONS_FASTPATH_BINDS=/tmp=${paths.tmp.path}:/dev/shm=${paths.shm.path}",
+            // proot stops every brk (heap growth): grow the heap 64 MB at a time.
+            // Measured on a simulated game load: 1101 -> 44 stops, read phase 6x faster.
+            "GLIBC_TUNABLES=glibc.malloc.top_pad=67108864",
         ) + GRAPHICS_ENV + listOf("/bin/sh", "-c", script)
 
         return ProcessBuilder(command).redirectErrorStream(true).apply {

@@ -29,12 +29,14 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 #include <sys/statvfs.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -604,6 +606,77 @@ static int fopen_flags(const char *mode)
 DEFINE_FOPEN(fopen)
 DEFINE_FOPEN(fopen64)
 
+/*
+ * Directories we open are read by us too: glibc's readdir would call getdents64
+ * internally (a proot stop per 32 KiB of entries) and fdopendir/closedir add an
+ * fstat and a close stop each. Our DIR is a struct of our own, recognized by its
+ * magic; every directory function below checks it and passes others to libc.
+ */
+#define PONS_DIR_MAGIC 0x5249445350534e4fULL /* "PONSPDIR" */
+struct pons_dir {
+    uint64_t magic;
+    int fd;
+    size_t pos, len;
+    long last_off;
+    char host[PATH_MAX];
+    _Alignas(8) char buf[32768];
+};
+
+static struct pons_dir *as_pons_dir(DIR *d)
+{
+    struct pons_dir *pd = (struct pons_dir *)d;
+    return pd && pd->magic == PONS_DIR_MAGIC ? pd : NULL;
+}
+
+/* struct linux_dirent64 is glibc's struct dirent64 (and dirent) on 64-bit. */
+struct pons_dirent {
+    uint64_t d_ino;
+    int64_t d_off;
+    unsigned short d_reclen;
+    unsigned char d_type;
+    char d_name[];
+};
+
+/*
+ * proot's link2symlink fakes hard links as symlinks to ".l2s." files and reports
+ * the type of what they point to; do the same so both paths list identically.
+ */
+static void fix_l2s_type(struct pons_dir *pd, struct pons_dirent *e)
+{
+    /* The ".l2s." intermediates themselves stay symlinks, as in proot. */
+    if (e->d_type != DT_LNK || strncmp(e->d_name, ".l2s.", 5) == 0)
+        return;
+    char path[PATH_MAX], target[PATH_MAX];
+    if (snprintf(path, sizeof path, "%s/%s", pd->host, e->d_name) >= (int)sizeof path)
+        return;
+    long n = fast_readlink(path, target, sizeof target - 1);
+    if (n <= 0)
+        return;
+    target[n] = '\0';
+    const char *base = strrchr(target, '/');
+    if (strncmp(base ? base + 1 : target, ".l2s.", 5) != 0)
+        return;
+    struct stat st;
+    if (fast_fstatat(path, &st, 0) == 0)
+        e->d_type = (unsigned char)IFTODT(st.st_mode);
+}
+
+static struct dirent *pons_readdir(struct pons_dir *pd)
+{
+    if (pd->pos >= pd->len) {
+        long n = syscall(SYS_getdents64, pd->fd, pd->buf, sizeof pd->buf, 0, 0, PROOT_FASTPATH_MAGIC);
+        if (n <= 0)
+            return NULL; /* end (errno untouched) or error (errno set) */
+        pd->len = (size_t)n;
+        pd->pos = 0;
+    }
+    struct pons_dirent *e = (struct pons_dirent *)(pd->buf + pd->pos);
+    pd->pos += e->d_reclen;
+    pd->last_off = e->d_off;
+    fix_l2s_type(pd, e);
+    return (struct dirent *)e;
+}
+
 DIR *opendir(const char *path)
 {
     char host[PATH_MAX], guest[PATH_MAX];
@@ -611,23 +684,145 @@ DIR *opendir(const char *path)
         int fd = (int)fast_openat(host, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
         if (fd < 0)
             return NULL;
+        /* Its own pages, not the heap: freeing ~37 KB blocks lets glibc trim the heap,
+         * and that trim corrupts malloc's state under proot's emulated brk (seen
+         * with ls -R and loadsim; never without trimming). */
+        struct pons_dir *pd = mmap(NULL, sizeof *pd, PROT_READ | PROT_WRITE,
+                                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (pd == MAP_FAILED)
+            pd = NULL;
+        if (!pd) {
+            syscall(SYS_close, fd, 0, 0, 0, 0, PROOT_FASTPATH_MAGIC);
+            errno = ENOMEM;
+            return NULL;
+        }
+        pd->magic = PONS_DIR_MAGIC;
+        pd->fd = fd;
+        pd->pos = pd->len = 0;
+        pd->last_off = 0;
+        strcpy(pd->host, host);
         remember_fd(fd, guest);
-        DIR *d = fdopendir(fd);
-        if (!d)
-            close(fd);
-        return d;
+        return (DIR *)pd;
     }
     REAL(opendir);
     return real_opendir(path);
 }
 
-/* closedir closes through libc internals: forget the descriptor first. */
+struct dirent *readdir(DIR *d)
+{
+    struct pons_dir *pd = as_pons_dir(d);
+    if (pd)
+        return pons_readdir(pd);
+    REAL(readdir);
+    return real_readdir(d);
+}
+
+struct dirent64 *readdir64(DIR *d)
+{
+    struct pons_dir *pd = as_pons_dir(d);
+    if (pd)
+        return (struct dirent64 *)pons_readdir(pd);
+    REAL(readdir64);
+    return real_readdir64(d);
+}
+
+int readdir_r(DIR *d, struct dirent *entry, struct dirent **result)
+{
+    struct pons_dir *pd = as_pons_dir(d);
+    if (!pd) {
+    #pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        REAL(readdir_r);
+        return real_readdir_r(d, entry, result);
+#pragma GCC diagnostic pop
+    }
+    int saved = errno;
+    errno = 0;
+    struct dirent *e = pons_readdir(pd);
+    int err = errno;
+    errno = saved;
+    if (!e) {
+        *result = NULL;
+        return err;
+    }
+    size_t len = ((struct pons_dirent *)e)->d_reclen;
+    memcpy(entry, e, len < sizeof *entry ? len : sizeof *entry);
+    *result = entry;
+    return 0;
+}
+
 int closedir(DIR *d)
 {
+    struct pons_dir *pd = as_pons_dir(d);
+    if (pd) {
+        forget_fd(pd->fd);
+        int r = (int)syscall(SYS_close, pd->fd, 0, 0, 0, 0, PROOT_FASTPATH_MAGIC);
+        pd->magic = 0;
+        munmap(pd, sizeof *pd);
+        return r;
+    }
     REAL(closedir);
-    forget_fd(dirfd(d));
     return real_closedir(d);
 }
+
+int dirfd(DIR *d)
+{
+    struct pons_dir *pd = as_pons_dir(d);
+    if (pd)
+        return pd->fd;
+    REAL(dirfd);
+    return real_dirfd(d);
+}
+
+void rewinddir(DIR *d)
+{
+    struct pons_dir *pd = as_pons_dir(d);
+    if (pd) {
+        lseek(pd->fd, 0, SEEK_SET);
+        pd->pos = pd->len = 0;
+        pd->last_off = 0;
+        return;
+    }
+    REAL(rewinddir);
+    real_rewinddir(d);
+}
+
+long telldir(DIR *d)
+{
+    struct pons_dir *pd = as_pons_dir(d);
+    if (pd)
+        return pd->last_off;
+    REAL(telldir);
+    return real_telldir(d);
+}
+
+void seekdir(DIR *d, long loc)
+{
+    struct pons_dir *pd = as_pons_dir(d);
+    if (pd) {
+        lseek(pd->fd, loc, SEEK_SET);
+        pd->pos = pd->len = 0;
+        pd->last_off = loc;
+        return;
+    }
+    REAL(seekdir);
+    real_seekdir(d, loc);
+}
+
+/* fstat of a descriptor we opened: proot (fake root) would stop to fix the owner. */
+int fstat(int fd, struct stat *st)
+{
+    if (fd >= 0 && fd < MAX_FAST_FD && (fast_fds[fd / 8] & (1u << (fd % 8)))) {
+        int r = (int)fast_fstat(fd, st);
+        if (r == 0)
+            fake_root(st);
+        return r;
+    }
+    REAL(fstat);
+    return real_fstat(fd, st);
+}
+
+int fstat64(int fd, struct stat64 *st) { return fstat(fd, (struct stat *)st); }
 
 /* realpath walks the path with lstat/readlink, one proot stop each: resolve it here. */
 char *realpath(const char *path, char *resolved)

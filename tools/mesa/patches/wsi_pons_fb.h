@@ -17,6 +17,12 @@
  * are written straight into the buffers, so the app never uploads pixels. Any
  * failure falls back to the version 1 file.
  *
+ * GPU copy (PONS_GPU_COPY=1, see wsi_pons_gpu.h): in version 2 the frame can be
+ * copied into the buffer by the GPU instead of memcpy. The GPU's target slot is
+ * chosen at queue-present time and stays "pending" (never reused, never shown)
+ * until the present thread publishes it, so the slot logic below also tracks
+ * the pending set.
+ *
  * SPDX-License-Identifier: MIT
  */
 #ifndef WSI_PONS_FB_H
@@ -81,10 +87,19 @@ struct pons_present {
    uint64_t frame_interval_ns;
    uint64_t last_frame_ns;
    uint64_t last_publish_ns;
+   /* Bumped whenever the buffers change; ties GPU imports to one set. */
+   uint32_t ahb_generation;
+   /* GPU copy slot bookkeeping. sel_lock is held only for a few instructions
+    * (never across pacing), so the application thread can use it at present
+    * time. Lock order: lock -> sel_lock, gpu lock -> sel_lock. */
+   pthread_mutex_t sel_lock;
+   bool gpu_valid;       /* header + buffers match the GPU imports */
+   uint32_t pending;     /* slots a GPU copy was submitted into, not yet published */
 };
 
 static struct pons_present pons_present_state = {
    .lock = PTHREAD_MUTEX_INITIALIZER,
+   .sel_lock = PTHREAD_MUTEX_INITIALIZER,
    .ahb_fd = { -1, -1, -1 },
 };
 
@@ -109,6 +124,17 @@ pons_ahb_release(struct pons_present *p)
       p->ahb_fd[i] = -1;
    }
    p->ahb_size = 0;
+   p->ahb_generation++;
+}
+
+/* The header or buffers are about to change: GPU copies must stop using them. */
+static void
+pons_gpu_invalidate(struct pons_present *p)
+{
+   pthread_mutex_lock(&p->sel_lock);
+   p->gpu_valid = false;
+   p->pending = 0;
+   pthread_mutex_unlock(&p->sel_lock);
 }
 
 /*
@@ -212,6 +238,7 @@ pons_ahb_request(struct pons_present *p, uint32_t width, uint32_t height,
       return false;
    }
    p->ahb_size = size;
+   p->ahb_generation++;
    *stride_px = stride;
    return true;
 }
@@ -228,6 +255,7 @@ pons_present_map(struct pons_present *p, uint32_t width, uint32_t height)
    if (path == NULL || path[0] == '\0')
       return false;
 
+   pons_gpu_invalidate(p);
    if (p->header) {
       munmap(p->header, p->map_size);
       p->header = NULL;
@@ -322,6 +350,86 @@ pons_present_pace(struct pons_present *p)
    }
 }
 
+/* Paces, then makes `target` the frame the app shows. Caller holds the lock. */
+static void
+pons_publish_locked(struct pons_present *p, int32_t x, int32_t y, uint32_t target)
+{
+   struct pons_present_header *h = p->header;
+   pons_present_pace(p);
+   h->x = x;
+   h->y = y;
+   atomic_store_explicit(&h->front, target, memory_order_release);
+   atomic_fetch_add_explicit(&h->sequence, 1, memory_order_release);
+   const uint64_t published = pons_now_ns();
+   if (p->last_publish_ns != 0) {
+      const uint64_t gap = published - p->last_publish_ns;
+      if (gap > 50000000ull)
+         atomic_fetch_add_explicit(&h->late_50ms, 1, memory_order_relaxed);
+      if (gap > 100000000ull)
+         atomic_fetch_add_explicit(&h->late_100ms, 1, memory_order_relaxed);
+   }
+   p->last_publish_ns = published;
+}
+
+/*
+ * GPU copy, application thread: reserves a slot that is neither the shown one,
+ * the one the app reads, nor another pending one. False when the GPU path is
+ * not valid or no slot is free; the caller then uses the CPU path.
+ */
+static bool __attribute__((unused))
+pons_gpu_slot_acquire(struct pons_present *p, uint32_t *target)
+{
+   bool ok = false;
+   pthread_mutex_lock(&p->sel_lock);
+   if (p->gpu_valid && p->header) {
+      const uint32_t front = atomic_load_explicit(&p->header->front, memory_order_acquire);
+      const uint32_t reading = atomic_load_explicit(&p->header->reading, memory_order_acquire);
+      for (uint32_t t = 0; t < PONS_PRESENT_BUFFERS; t++) {
+         if (t != front && t != reading && !(p->pending & (1u << t))) {
+            p->pending |= 1u << t;
+            *target = t;
+            ok = true;
+            break;
+         }
+      }
+   }
+   pthread_mutex_unlock(&p->sel_lock);
+   return ok;
+}
+
+/* Gives a reserved slot back (copy never submitted, or frame dropped). */
+static void __attribute__((unused))
+pons_gpu_slot_cancel(struct pons_present *p, uint32_t target)
+{
+   pthread_mutex_lock(&p->sel_lock);
+   p->pending &= ~(1u << target);
+   pthread_mutex_unlock(&p->sel_lock);
+}
+
+/*
+ * GPU copy, present thread: the GPU finished writing `target` (the caller
+ * waited for the copy's fence). Publishes it like a CPU frame. A frame whose
+ * buffers were replaced meanwhile is dropped. Always true: the frame is
+ * handled, the caller must not send it to the X server.
+ */
+static bool __attribute__((unused))
+pons_fb_publish_target(int32_t x, int32_t y, uint32_t width, uint32_t height,
+                       uint32_t target)
+{
+   struct pons_present *p = &pons_present_state;
+   pthread_mutex_lock(&p->lock);
+   pthread_mutex_lock(&p->sel_lock);
+   const bool valid = p->gpu_valid && p->header && p->header->width == width &&
+                      p->header->height == height && target < PONS_PRESENT_BUFFERS;
+   if (valid)
+      p->pending &= ~(1u << target);
+   pthread_mutex_unlock(&p->sel_lock);
+   if (valid)
+      pons_publish_locked(p, x, y, target);
+   pthread_mutex_unlock(&p->lock);
+   return true;
+}
+
 /*
  * Publishes a 32-bit BGRX frame whose top-left corner sits at (x, y) on the X
  * screen. Returns false when direct present is unavailable, so the caller sends
@@ -344,9 +452,19 @@ pons_fb_present(int32_t x, int32_t y, uint32_t width, uint32_t height,
    struct pons_present_header *h = p->header;
    const uint32_t front = atomic_load_explicit(&h->front, memory_order_relaxed);
    const uint32_t reading = atomic_load_explicit(&h->reading, memory_order_acquire);
+   pthread_mutex_lock(&p->sel_lock);
+   const uint32_t pending = p->pending;
+   pthread_mutex_unlock(&p->sel_lock);
    uint32_t target = 0;
-   while (target == front || target == reading)
+   while (target < PONS_PRESENT_BUFFERS &&
+          (target == front || target == reading || (pending & (1u << target))))
       target++;
+   if (target == PONS_PRESENT_BUFFERS) {
+      /* Only with GPU copies in flight: every slot is shown, read or reserved.
+       * Skip this frame rather than overwrite one; the next one gets a slot. */
+      pthread_mutex_unlock(&p->lock);
+      return true;
+   }
 
    const bool ahb = h->version == PONS_PRESENT_VERSION_AHB;
    uint8_t *dst = ahb ? p->ahb_map[target]
@@ -368,22 +486,61 @@ pons_fb_present(int32_t x, int32_t y, uint32_t width, uint32_t height,
       ioctl(p->ahb_fd[target], DMA_BUF_IOCTL_SYNC, &sync);
    }
 
-   pons_present_pace(p);
-   h->x = x;
-   h->y = y;
-   atomic_store_explicit(&h->front, target, memory_order_release);
-   atomic_fetch_add_explicit(&h->sequence, 1, memory_order_release);
-   const uint64_t published = pons_now_ns();
-   if (p->last_publish_ns != 0) {
-      const uint64_t gap = published - p->last_publish_ns;
-      if (gap > 50000000ull)
-         atomic_fetch_add_explicit(&h->late_50ms, 1, memory_order_relaxed);
-      if (gap > 100000000ull)
-         atomic_fetch_add_explicit(&h->late_100ms, 1, memory_order_relaxed);
-   }
-   p->last_publish_ns = published;
+   pons_publish_locked(p, x, y, target);
    pthread_mutex_unlock(&p->lock);
    return true;
+}
+
+/* What the GPU copy needs to know about the app's buffers. */
+struct pons_gpu_info {
+   uint32_t width, height, stride_bytes, generation;
+   int fd[PONS_PRESENT_BUFFERS]; /* dup()s the caller owns (or hands to Vulkan) */
+};
+
+/* Version 2 only. On true the caller owns the fds in `out`. */
+static bool __attribute__((unused))
+pons_gpu_info_get(struct pons_gpu_info *out)
+{
+   struct pons_present *p = &pons_present_state;
+   bool ok = false;
+   for (uint32_t i = 0; i < PONS_PRESENT_BUFFERS; i++)
+      out->fd[i] = -1;
+   pthread_mutex_lock(&p->lock);
+   if (p->header && p->header->version == PONS_PRESENT_VERSION_AHB) {
+      ok = true;
+      for (uint32_t i = 0; i < PONS_PRESENT_BUFFERS && ok; i++) {
+         out->fd[i] = p->ahb_fd[i] >= 0 ? fcntl(p->ahb_fd[i], F_DUPFD_CLOEXEC, 3) : -1;
+         ok = out->fd[i] >= 0;
+      }
+      out->width = p->header->width;
+      out->height = p->header->height;
+      out->stride_bytes = p->header->stride;
+      out->generation = p->ahb_generation;
+   }
+   pthread_mutex_unlock(&p->lock);
+   if (!ok) {
+      for (uint32_t i = 0; i < PONS_PRESENT_BUFFERS; i++) {
+         if (out->fd[i] >= 0)
+            close(out->fd[i]);
+         out->fd[i] = -1;
+      }
+   }
+   return ok;
+}
+
+/* The GPU imports of generation `generation` are ready. False if the buffers changed. */
+static bool __attribute__((unused))
+pons_gpu_enable(uint32_t generation)
+{
+   struct pons_present *p = &pons_present_state;
+   pthread_mutex_lock(&p->lock);
+   pthread_mutex_lock(&p->sel_lock);
+   const bool ok = p->header && p->ahb_generation == generation;
+   p->gpu_valid = ok;
+   p->pending = 0;
+   pthread_mutex_unlock(&p->sel_lock);
+   pthread_mutex_unlock(&p->lock);
+   return ok;
 }
 
 #endif /* WSI_PONS_FB_H */

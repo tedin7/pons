@@ -27,7 +27,10 @@ Pons stands on proot, Box64, Mesa and Debian. On top of them it adds:
 | **x86 without binfmt** | A proot patch treats x86 ELF files like scripts whose interpreter is Box64. | Steam starts x86 games as usual |
 | **Translation cache that survives a kill** | Box64 saves its DynaCache while running, not only on a clean exit. | Android stops games with a kill; the cache now persists |
 | **Quiet Steam** | Steam's web helper (Chromium) is frozen while a game runs. | ~470 MB more free memory, 3 °C cooler under load |
-| **Hands-off benchmarks** | Profiles, a layer suite and a game benchmark that run over adb in a loop, no touch input. | Every number in this file |
+| **Bigger heap steps** | proot stops every `brk`; glibc grows the heap 64 MB at a time (`glibc.malloc.top_pad`). | Simulated game load: `brk` stops 1101 → 44, file-read phase 997 → 158 ms |
+| **Thermal governor** | Polls Android's thermal headroom and lowers the frame cap (30 → 24 → 20) before the device throttles; Mesa re-reads the cap every frame. | Not yet measured on a long session |
+| **GPU frame copy** (experimental, `PONS_GPU_COPY=1`) | Imports the Android buffers into Vulkan and copies the frame on the GPU instead of a 7 MB CPU `memcpy`. | Not yet tested on the device |
+| **Hands-off benchmarks and profiler** | Profiles, a layer suite, a game benchmark and an automatic bottleneck profiler, all over adb, no touch input. | Every number in this file |
 
 ## How it works
 
@@ -83,6 +86,30 @@ benchmarks it. Adding a game means adding a profile, not code.
 | `tools/dev/pp-bench.sh <game>:<scene> [s]` | yes | fps, late frames, CPU/GPU/skin temperature (thermal HAL), Android thermal status, free memory, CPU time spent loading per process |
 | `tools/dev/pp-bench-loop.sh <n> ...` | yes | the same, repeated |
 | `tools/dev/pp-fastpath-check.sh` | no | correctness of the file fast path |
+| `tools/dev/pp-prof.sh <label> [cmd]` | no | **automatic bottleneck ranking** for any workload (default: `loadsim`) |
+
+### The bottleneck profiler
+
+`pp-prof.sh` needs no game, no Steam and no app screen, and takes under a minute:
+
+1. it measures what one proot stop and one Box64 native call cost on the device right now;
+2. it runs the workload with proot's per-syscall stop counters (`PROOT_SYSCALL_STATS`) and
+   Box64's per-function native-call counters (`PONS_CALLSTATS`) on;
+3. it samples every thread's user/system CPU, page faults and context switches from
+   *outside* proot (so sampling adds no stops), plus device temperatures;
+4. it turns counts into estimated seconds and prints the biggest bottleneck first.
+
+The default workload, `loadsim`, does what a game does while loading: it walks a
+directory tree, stats and reads every file, and parses the bytes on four threads with
+math calls. It is built for x86_64 (through Box64) and arm64 to compare the two.
+
+Example (x86_64 `loadsim` over `/usr`, 14 207 entries, 183 MB):
+
+| | proot stops | wall | read phase |
+| --- | --- | --- | --- |
+| proot only | tens of thousands | — | — |
+| + file fast path | 2 815 (1 101 of them `brk`) | 1.5 s | 997 ms |
+| + 64 MB heap steps | 1 758 (mostly Box64 loading its libraries) | 0.8 s | 158 ms |
 
 The game benchmark cools the device down first, restores the same save, waits for the
 game's own "ready" log line, sends scripted keys if the scene needs them, then samples
@@ -112,6 +139,10 @@ CPU, proot 13 s + 75 s. The file fast path targets exactly that system time.
 
 ## Open problems
 
+- **proot and heap trimming.** Freeing large heap blocks with the fast path loaded made
+  glibc trim the heap and then report corruption under proot's emulated `brk`; the fast
+  path now uses `mmap` for its own buffers and the large heap pad also avoids trims.
+  The root cause in proot is not yet understood.
 - **Native-call bridge in Box64.** A call from x86 code into a native library costs
   ~10 ns of register spills and stack bookkeeping, and consecutive calls can no longer
   overlap (`exp`: 4 ns native, 23 ns translated). Box64 patch 0003 counts native calls

@@ -57,14 +57,14 @@ def threads_and_processes(run, hz):
             names[tid] = f[4]
             first.setdefault(tid, (float(f[1]), ticks))
             last[tid] = (float(f[1]), ticks, int(f[5]), int(f[6]))
-        elif f[0] == "P" and len(f) >= 10:
-            procs[f[2]] = [int(x) if x.isdigit() else 0 for x in f[3:10]]
+        elif f[0] == "P" and len(f) >= 7:
+            procs[f[2]] = [int(x) if x.isdigit() else 0 for x in f[3:7]]
     busy = []
     for tid, (t1, ticks1, user, system) in last.items():
         t0, ticks0 = first[tid]
         busy.append((ticks1 / hz, user / hz, system / hz, names[tid], tid))
     busy.sort(reverse=True)
-    totals = [sum(p[i] for p in procs.values()) for i in range(7)] if procs else [0] * 7
+    totals = [sum(p[i] for p in procs.values()) for i in range(4)] if procs else [0] * 4
     return busy, totals
 
 
@@ -79,8 +79,12 @@ def main():
             hz = int(line.split()[1])
     stops = proot_stops(run)
     calls = native_calls(run)
-    busy, (minflt, majflt, vctx, nvctx, syscr, syscw, rbytes) = threads_and_processes(run, hz)
+    busy, (minflt, majflt, vctx, nvctx) = threads_and_processes(run, hz)
 
+    if not (user or system) and busy:
+        # `times` saw nothing (the workload ran detached): use the sampled threads.
+        user = sum(b[1] for b in busy)
+        system = sum(b[2] for b in busy)
     stop_us = max(0.0, (cal.get(("proot", "stat"), 0) - cal.get(("fast", "stat"), 0)) / 1000)
     bridge_ns = max(0.0, cal.get(("box64", "fabs_direct"), 0) - cal.get(("native", "fabs_direct"), 0))
     total_stops = sum(stops.values())
@@ -113,7 +117,7 @@ def main():
         print(f"{cost:8.2f} s  {cost / wall * 100 if wall else 0:5.1f}%  {what}")
 
     if stops:
-        print("\n-- proot stops by syscall (includes the sampler's own reads of /proc)")
+        print("\n-- proot stops by syscall")
         for name, n in sorted(stops.items(), key=lambda kv: -kv[1])[:10]:
             print(f"{n:10d}  {name}")
     if calls:
@@ -124,8 +128,8 @@ def main():
         print("\n-- busiest threads (CPU s: total = user + system)")
         for total, u, s, name, tid in busy[:8]:
             print(f"{total:7.2f} = {u:6.2f} + {s:6.2f}  {name} ({tid})")
-    print(f"\nprocess counters: syscalls read {syscr} write {syscw}, read {rbytes / 1e6:.1f} MB from disk,"
-          f" page faults {minflt} minor / {majflt} major, context switches {vctx} voluntary / {nvctx} involuntary")
+    print(f"\nprocess counters: page faults {minflt} minor / {majflt} major,"
+          f" context switches {vctx} voluntary / {nvctx} involuntary")
 
     temps = [line.split() for line in read(run / "thermals.txt") if len(line.split()) == 5]
     if temps:
