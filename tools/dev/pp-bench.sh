@@ -82,6 +82,7 @@ waited=0
 while [ "$(cpu_temp)" -gt "$COOL_C" ] && [ "$waited" -lt 600 ]; do sleep 10; waited=$((waited + 10)); done
 start_temp=$(cpu_temp)
 
+APP_UID=$($S shell pm list packages -U $PKG | sed -n 's/.*uid://p' | tr -d '\r')
 log "starting: $PROGRAM"
 $S shell "input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard; am start -n $PKG/.MainActivity --es program '$PROGRAM'" >/dev/null 2>&1
 started=$(date +%s)
@@ -97,8 +98,14 @@ trap 'kill $SAMPLER_PID 2>/dev/null; stop_all' EXIT INT TERM
 log "waiting for: $READY_LOG (max ${READY_TIMEOUT}s)"
 ready=0
 away=0
+load_top=0
 while :; do
     sleep 5
+    # Loading is the hottest phase: snapshot who works 60 s in.
+    if [ "$load_top" = 0 ] && [ $(( $(date +%s) - started )) -ge 60 ]; then
+        load_top=1
+        $S shell "top -b -n 1 -d 2 -m 10 -o PID,%CPU,RES,NAME | cut -c1-120; P=\$(pidof ck3 | cut -d' ' -f1); [ -n \"\$P\" ] && top -H -b -n 1 -d 2 -m 12 -p \$P -o TID,%CPU,NAME" > "${RAW%.log}.loadtop" 2>/dev/null
+    fi
     if $S shell "run-as $PKG grep -q -E \"$READY_LOG\" '$GAME_LOG'" 2>/dev/null; then
         ready=$(awk '/^S /{ if (p != "" && $2 - p >= 5) run++; else run = 0; p = $2 } END { print (run >= 3) }' "$RAW")
         [ "$ready" = 1 ] && break
@@ -117,6 +124,9 @@ while :; do
     fi
 done
 load_s=$(( $(date +%s) - started ))
+# CPU seconds each process used to get here (user/system split), i.e. the cost of
+# loading: name, pid, user s, system s. The app's processes share its uid.
+$S shell 'U='"$APP_UID"'; for d in /proc/[0-9]*; do [ "$(stat -c %u $d 2>/dev/null)" = "$U" ] || continue; awk -v hz=100 "{ o=index(\$0,\"(\"); c=index(\$0,\") \"); n=substr(\$0,o+1,c-o-1); split(substr(\$0,c+2),f,\" \"); printf \"%s %s %.1f %.1f\n\", n, \$1, f[12]/hz, f[13]/hz }" $d/stat 2>/dev/null; done' > "${RAW%.log}.loadcpu" 2>/dev/null
 if [ "$ready" = 1 ]; then
     # Games keep streaming assets for a while after the first steady frames.
     log "settling ${SETTLE}s"
