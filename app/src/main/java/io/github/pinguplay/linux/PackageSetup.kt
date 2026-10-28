@@ -64,7 +64,7 @@ class PackageSetup(context: Context, private val paths: LinuxPaths) {
             add(Group.SCREEN)
             add(Group.AUDIO)
             if ("pinguplay-bench" in program) add(Group.BENCHMARK)
-            if ("pinguplay-steam" in program) add(Group.STEAM)
+            if ("pinguplay-steam" in program || "pinguplay-ck3" in program) add(Group.STEAM)
         }
     }
 }

@@ -4,7 +4,10 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
+import android.provider.Settings
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -33,6 +36,10 @@ class MainActivity : Activity() {
                     setOnClickListener { run(program) }
                 })
             }
+            addView(Button(context).apply {
+                text = "Batteria"
+                setOnClickListener { askUnrestrictedBattery() }
+            })
             addView(Button(context).apply {
                 text = "Ferma"
                 setOnClickListener { LinuxSessionService.stop(context) }
@@ -95,6 +102,20 @@ class MainActivity : Activity() {
         openDisplay()
     }
 
+    /**
+     * Games use a lot of memory; with battery optimisation on, OEM memory managers
+     * kill the app as soon as it leaves the screen. Ask Android to exempt us.
+     */
+    private fun askUnrestrictedBattery() {
+        val power = getSystemService(PowerManager::class.java)
+        if (power.isIgnoringBatteryOptimizations(packageName)) {
+            append("Batteria già senza restrizioni.")
+            return
+        }
+        startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Uri.parse("package:$packageName")))
+    }
+
     private fun openDisplay() = startActivity(Intent(this, DisplayActivity::class.java))
 
     private fun append(line: String) {
@@ -109,6 +130,7 @@ class MainActivity : Activity() {
             "Prova grafica" to "pinguplay-bench",
             "Ottimizza traduzione" to "pinguplay-transbench",
             "Steam" to "pinguplay-steam",
+            "Crusader Kings III" to "pinguplay-ck3",
         )
     }
 }

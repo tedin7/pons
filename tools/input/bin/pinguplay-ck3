@@ -1,0 +1,33 @@
+#!/bin/sh
+# Plays Crusader Kings III: starts Steam in the background (the game signs in through
+# its client), waits for the account to be online, then runs the Linux build directly,
+# skipping the Paradox launcher. x86 code runs through Box64 (proot hands it over).
+set -u
+STEAM="$HOME/.local/share/Steam"
+GAME="$STEAM/steamapps/common/Crusader Kings III/binaries"
+LOG="$STEAM/logs/connection_log.txt"
+
+[ -x "$GAME/ck3" ] || { echo "Crusader Kings III non è installato: installalo da Steam." >&2; exit 1; }
+
+echo "Avvio Steam…"
+start_lines=$(wc -l < "$LOG" 2>/dev/null || echo 0)
+pinguplay-steam -silent > /tmp/pinguplay-steam.log 2>&1 &
+
+echo "Aspetto che il tuo account Steam sia collegato…"
+waited=0
+until tail -n +"$((start_lines + 1))" "$LOG" 2>/dev/null | grep -q "\[Logged On"; do
+    sleep 2
+    waited=$((waited + 2))
+    if [ "$waited" -ge 300 ]; then
+        echo "Steam non si è collegato in 5 minuti: apri Steam e fai l'accesso." >&2
+        exit 1
+    fi
+done
+
+echo "Avvio Crusader Kings III…"
+cd "$GAME"
+export SteamAppId=1158310 SteamGameId=1158310
+# A strategy game needs no more; above this the tablet only gets hotter.
+export PINGUPLAY_MAX_FPS="${PINGUPLAY_MAX_FPS_GAME:-30}"
+export DISABLE_VK_LAYER_VALVE_steam_overlay_1=1
+exec ./ck3 -gdpr-compliant
