@@ -49,6 +49,9 @@ class FramebufferRenderer(
 
     private var program = 0
     private var texture = 0
+    /** Texture the current frame is drawn from: our upload texture or a zero-upload one. */
+    private var drawTexture = 0
+    private var lastAhbTexture = 0
     private var textureSize = 0 to 0
     private var surfaceSize = 0 to 0
     private var sourceInode = -1L
@@ -78,9 +81,12 @@ class FramebufferRenderer(
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        AhbFrames.releaseRetired()
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
+        drawTexture = texture
         val area = uploadPresentFrame() ?: uploadDesktop() ?: return
         shown = area
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, drawTexture)
         draw(area.width, area.height)
     }
 
@@ -89,17 +95,33 @@ class FramebufferRenderer(
         val now = System.nanoTime()
         val frame = present.acquire(presentSequence)
         if (frame != null) {
-            try {
-                upload(frame.width, frame.height, frame.pixels)
-            } finally {
-                present.release()
+            val pixels = frame.pixels
+            if (pixels != null) {
+                try {
+                    upload(frame.width, frame.height, pixels)
+                } finally {
+                    present.release()
+                }
+            } else {
+                // Zero-upload: sample the Android buffer Mesa wrote into. Its "reading"
+                // mark stays until the next acquire, so Mesa never overwrites the
+                // buffer while this frame is still on its way to the screen.
+                val set = AhbFrames.current
+                if (set == null || set.width != frame.width || set.height != frame.height) {
+                    present.release()
+                    return null
+                }
+                lastAhbTexture = AhbFrames.texture(set, frame.index)
+                drawTexture = lastAhbTexture
             }
             presentSequence = frame.sequence
             presentSeenAt = now
+            if (frame.pixels != null) lastAhbTexture = 0
             return ShownArea(frame.x, frame.y, frame.width, frame.height)
         }
         val last = shown
         val fresh = now - presentSeenAt < PRESENT_TIMEOUT_NS
+        if (fresh && lastAhbTexture != 0) drawTexture = lastAhbTexture
         return if (fresh && last != null && presentSequence != 0L) last else null
     }
 

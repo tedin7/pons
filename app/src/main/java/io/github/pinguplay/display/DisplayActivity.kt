@@ -60,6 +60,7 @@ class DisplayActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AhbFrames.startServer()
         val paths = LinuxPaths(this)
         renderer = FramebufferRenderer(paths.framebuffer, paths.present, DisplaySettings(this).sharpness)
         surface = GLSurfaceView(this).apply {

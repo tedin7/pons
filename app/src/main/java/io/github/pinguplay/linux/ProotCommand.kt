@@ -23,6 +23,8 @@ object ProotCommand {
         // then hands finished frames straight to the app, skipping the X server.
         "MESA_VK_WSI_DEBUG=sw",
         "PINGUPLAY_PRESENT=/tmp/pinguplay-present",
+        // Ask the app for Android graphics buffers to write frames into (no upload).
+        "PINGUPLAY_AHB=1",
         // Above the panel's useful rate frames only cost heat the CPU needs.
         "PINGUPLAY_MAX_FPS=120",
         "BOX64_LOG=0",

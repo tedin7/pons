@@ -3,6 +3,7 @@
 # its client), waits for the account to be online, then runs the Linux build directly,
 # skipping the Paradox launcher. x86 code runs through Box64 (proot hands it over).
 set -u
+# Arguments go to the game (e.g. -continuelastsave -debug_mode for benchmarks).
 STEAM="$HOME/.local/share/Steam"
 GAME="$STEAM/steamapps/common/Crusader Kings III/binaries"
 LOG="$STEAM/logs/connection_log.txt"
@@ -30,4 +31,4 @@ export SteamAppId=1158310 SteamGameId=1158310
 # A strategy game needs no more; above this the tablet only gets hotter.
 export PINGUPLAY_MAX_FPS="${PINGUPLAY_MAX_FPS_GAME:-30}"
 export DISABLE_VK_LAYER_VALVE_steam_overlay_1=1
-exec ./ck3 -gdpr-compliant
+exec ./ck3 -gdpr-compliant "$@"

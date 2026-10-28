@@ -36,10 +36,10 @@ object Components {
         // (triple-buffered full-screen frames handed to the app without the X server), softpipe so
         // Xvfb can offer GLX while games render through Zink on the GPU, and async software
         // present (the GPU wait moved off the game's thread).
-        version = "main-f01e9b0-pp5",
-        sizeBytes = 7_201_920,
-        sha256 = "13eea6dfd3ece9edc176fd88a626bdcfa369068ded4446e2ddab6c01828d97a2",
-        url = "${BASE}mesa-main-f01e9b0-pp5-pinguplay.tar.xz",
+        version = "main-f01e9b0-pp7",
+        sizeBytes = 7_202_496,
+        sha256 = "99035daef43afbf35be55d1d4dca7214d5b89ffcf534106060977c9eeb4eb651",
+        url = "${BASE}mesa-main-f01e9b0-pp7-pinguplay.tar.xz",
         replaces = "opt/pinguplay/mesa",
     )
 
@@ -55,10 +55,10 @@ object Components {
 
     val TOOLS = Component(
         id = "tools",
-        version = "16",
-        sizeBytes = 27_680,
-        sha256 = "7eaefc8b719b2ebd6cf17ef96e80b8763f22421f6ebb4bb1b6323f74c9c3ca81",
-        url = "${BASE}pinguplay-tools-16.tar.xz",
+        version = "17",
+        sizeBytes = 27_648,
+        sha256 = "6572fbf864549df784a2e059f5b766a2fc16804a79602cc641f26aae44c38d60",
+        url = "${BASE}pinguplay-tools-17.tar.xz",
     )
 
     /** Order matters: the rootfs must exist before anything unpacks into it. */

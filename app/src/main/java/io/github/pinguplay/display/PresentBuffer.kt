@@ -16,14 +16,18 @@ import java.nio.channels.FileChannel
  */
 class PresentBuffer(private val file: File) {
 
-    /** A complete frame, valid until [release]. */
+    /**
+     * A complete frame, valid until [release]. [pixels] is null for zero-upload
+     * frames (header version 2): the frame is in Android buffer [index] of [AhbFrames].
+     */
     class Frame(
         val width: Int,
         val height: Int,
         val x: Int,
         val y: Int,
         val sequence: Long,
-        val pixels: ByteBuffer,
+        val index: Int,
+        val pixels: ByteBuffer?,
     )
 
     private var map: MappedByteBuffer? = null
@@ -45,11 +49,14 @@ class PresentBuffer(private val file: File) {
             val width = m.getInt(OFF_WIDTH)
             val height = m.getInt(OFF_HEIGHT)
             val stride = m.getInt(OFF_STRIDE)
+            if (m.getInt(OFF_VERSION) == VERSION_AHB) {
+                return Frame(width, height, m.getInt(OFF_X), m.getInt(OFF_Y), sequence, front, null)
+            }
             if (stride != width * 4) return null
             val start = HEADER_SIZE + front * stride * height
             val pixels = m.duplicate().order(ByteOrder.LITTLE_ENDIAN)
                 .position(start).limit(start + stride * height) as ByteBuffer
-            return Frame(width, height, m.getInt(OFF_X), m.getInt(OFF_Y), sequence, pixels.slice())
+            return Frame(width, height, m.getInt(OFF_X), m.getInt(OFF_Y), sequence, front, pixels.slice())
         }
         return null
     }
@@ -73,8 +80,9 @@ class PresentBuffer(private val file: File) {
         val m = RandomAccessFile(file, "rw").use { raf ->
             raf.channel.map(FileChannel.MapMode.READ_WRITE, 0, raf.length())
         }.order(ByteOrder.LITTLE_ENDIAN) as MappedByteBuffer
-        if (m.getInt(OFF_MAGIC) != MAGIC || m.getInt(OFF_VERSION) != VERSION) return null
-        val expected = HEADER_SIZE.toLong() +
+        val version = m.getInt(OFF_VERSION)
+        if (m.getInt(OFF_MAGIC) != MAGIC || (version != VERSION && version != VERSION_AHB)) return null
+        val expected = if (version == VERSION_AHB) HEADER_SIZE.toLong() else HEADER_SIZE.toLong() +
             m.getInt(OFF_BUFFERS).toLong() * m.getInt(OFF_STRIDE) * m.getInt(OFF_HEIGHT)
         if (m.capacity() < expected) return null
         inode = inodeOf()
@@ -87,6 +95,8 @@ class PresentBuffer(private val file: File) {
     companion object {
         private const val MAGIC = 0x53525050
         private const val VERSION = 1
+        /** Frames live in Android graphics buffers shared through [AhbFrames]. */
+        private const val VERSION_AHB = 2
         private const val NONE = -1
         private const val HEADER_SIZE = 64
         private const val OFF_MAGIC = 0

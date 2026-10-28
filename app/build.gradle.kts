@@ -18,6 +18,14 @@ android {
 
     buildFeatures { buildConfig = true }
 
+    ndkVersion = "27.2.12479018"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
     buildTypes {
         debug {
             // Dev mirror on the build machine, reachable over Tailscale.
