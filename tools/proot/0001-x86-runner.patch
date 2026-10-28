@@ -1,0 +1,70 @@
+diff --git a/src/execve/shebang.c b/src/execve/shebang.c
+index 83ceeda..8f7ac39 100644
+--- a/src/execve/shebang.c
++++ b/src/execve/shebang.c
+@@ -30,6 +30,8 @@
+ #include <sys/param.h>     /* MAXSYMLINKS, */
+ #include <stdbool.h>       /* bool, */
+ #include <assert.h>        /* assert(3), */
++#include <stdlib.h>        /* getenv(3), */
++#include <string.h>        /* strlen(3), memcpy(3), */
+ 
+ #include "execve/shebang.h"
+ #include "execve/execve.h"
+@@ -37,6 +39,44 @@
+ #include "tracee/tracee.h"
+ #include "attribute.h"
+ 
++#define ELF_MACHINE_OFFSET 18
++#define EM_386_ID 3
++#define EM_X86_64_ID 62
++
++/**
++ * If @fd is an x86 ELF and PROOT_X86_RUNNER is set, copy the runner path into
++ * @user_path and return 1, otherwise return 0.  This stands in for
++ * binfmt_misc, which needs root: the runner (e.g. /usr/local/bin/box64) is
++ * used like a script interpreter, so the program path becomes its argument.
++ */
++static int extract_x86_runner(int fd, char user_path[PATH_MAX])
++{
++	const char *runner = getenv("PROOT_X86_RUNNER");
++	unsigned char header[ELF_MACHINE_OFFSET + 2];
++	unsigned int machine;
++	size_t length;
++
++	if (runner == NULL || runner[0] != '/')
++		return 0;
++
++	if (pread(fd, header, sizeof(header), 0) != (ssize_t) sizeof(header))
++		return 0;
++
++	if (header[0] != 0x7f || header[1] != 'E' || header[2] != 'L' || header[3] != 'F')
++		return 0;
++
++	machine = header[ELF_MACHINE_OFFSET] | (header[ELF_MACHINE_OFFSET + 1] << 8);
++	if (machine != EM_386_ID && machine != EM_X86_64_ID)
++		return 0;
++
++	length = strlen(runner);
++	if (length >= PATH_MAX)
++		return 0;
++
++	memcpy(user_path, runner, length + 1);
++	return 1;
++}
++
+ /**
+  * Extract into @user_path and @argument the shebang from @host_path.
+  * This function returns -errno if an error occured, 1 if a shebang
+@@ -82,6 +122,11 @@ static int extract_shebang(const Tracee *tracee UNUSED, const char *host_path,
+ 
+ 	/* Check if it really is a script text. */
+ 	if (tmp2[0] != '#' || tmp2[1] != '!') {
++		if (extract_x86_runner(fd, user_path)) {
++			argument[0] = '\0';
++			status = 1;
++			goto end;
++		}
+ 		status = 0;
+ 		goto end;
+ 	}

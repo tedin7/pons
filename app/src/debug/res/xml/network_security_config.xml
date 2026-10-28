@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug only: the dev component mirror is plain HTTP over Tailscale; files are sha256-checked. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">mirror.example</domain>
+    </domain-config>
+</network-security-config>

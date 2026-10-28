@@ -1,63 +1,89 @@
 package io.github.pinguplay
 
+import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
-import android.util.Log
+import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import io.github.pinguplay.display.DisplayActivity
+import io.github.pinguplay.session.LinuxSession
+import io.github.pinguplay.session.LinuxSessionService
 
-/** Milestone 1: prove that a full Debian runs inside the app. */
+/** Launcher: pick something to run, watch the Linux log. */
 class MainActivity : Activity() {
 
     private lateinit var output: TextView
     private lateinit var scroll: ScrollView
+    private val listener: (String) -> Unit = { line -> runOnUiThread { append(line) } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
+
+        val buttons = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            PROGRAMS.forEach { (label, program) ->
+                addView(Button(context).apply {
+                    text = label
+                    setOnClickListener { run(program) }
+                })
+            }
+            addView(Button(context).apply {
+                text = "Ferma"
+                setOnClickListener { LinuxSessionService.stop(context) }
+            })
+            addView(Button(context).apply {
+                text = "Schermo"
+                setOnClickListener { openDisplay() }
+            })
+        }
         output = TextView(this).apply {
             typeface = Typeface.MONOSPACE
-            textSize = 14f
-            setPadding(32, 48, 32, 32)
+            textSize = 13f
+            setPadding(32, 16, 32, 32)
         }
         scroll = ScrollView(this).apply { addView(output) }
-        setContentView(scroll)
-        Thread(::startLinux, "pinguplay-linux").start()
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 48, 0, 0)
+            addView(buttons)
+            addView(scroll)
+        })
     }
 
-    private fun startLinux() {
-        try {
-            val installer = RootfsInstaller(this)
-            if (!installer.isInstalled()) {
-                show("Installo Debian (una volta sola)…")
-                installer.install { n -> show("  file estratti: $n") }
-            }
-            show("Avvio Linux…\n")
-            val code = LinuxRunner(this, installer.rootfsDir).run(TEST_SCRIPT, ::show)
-            show("\nFinito, codice di uscita $code")
-        } catch (e: Exception) {
-            Log.e(TAG, "Linux start failed", e)
-            show("ERRORE: ${e.message}")
-        }
+    override fun onStart() {
+        super.onStart()
+        output.text = ""
+        LinuxSession.log().forEach(::append)
+        LinuxSession.addListener(listener)
     }
 
-    private fun show(line: String) {
-        Log.i(TAG, line)
-        runOnUiThread {
-            output.append(line + "\n")
-            scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
-        }
+    override fun onStop() {
+        LinuxSession.removeListener(listener)
+        super.onStop()
+    }
+
+    private fun run(program: String) {
+        LinuxSessionService.start(this, program)
+        openDisplay()
+    }
+
+    private fun openDisplay() = startActivity(Intent(this, DisplayActivity::class.java))
+
+    private fun append(line: String) {
+        output.append(line + "\n")
+        scroll.post { scroll.fullScroll(ScrollView.FOCUS_DOWN) }
     }
 
     companion object {
-        private const val TAG = "Pinguplay"
-        private val TEST_SCRIPT = """
-            echo "== Sistema =="; uname -srm
-            grep PRETTY_NAME /etc/os-release
-            echo "== Utente =="; id
-            echo "== Scheda video =="; ls -l /dev/kgsl-3d0 2>&1
-            echo "== Memoria =="; head -1 /proc/meminfo
-            echo "PINGUPLAY-OK"
-        """.trimIndent()
+        private val PROGRAMS = listOf(
+            "Cubo Vulkan" to "vkcube --wsi xcb",
+            "Ingranaggi OpenGL" to "glxinfo -B; glxgears -info",
+            "Steam" to "pinguplay-steam",
+        )
     }
 }

@@ -16,6 +16,19 @@ android {
         ndk { abiFilters += "arm64-v8a" }
     }
 
+    buildFeatures { buildConfig = true }
+
+    buildTypes {
+        debug {
+            // Dev mirror on the build machine, reachable over Tailscale.
+            buildConfigField("String", "COMPONENTS_BASE_URL", "\"http://mirror.example:8765/\"")
+        }
+        release {
+            buildConfigField("String", "COMPONENTS_BASE_URL",
+                "\"https://github.com/pinguplay/pinguplay/releases/download/components/\"")
+        }
+    }
+
     // proot and its loader are shipped as lib*.so so Android extracts them into
     // nativeLibraryDir, the only app location where executing files is allowed.
     packaging {
