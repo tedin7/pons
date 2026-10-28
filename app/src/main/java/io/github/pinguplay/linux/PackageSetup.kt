@@ -19,14 +19,15 @@ class PackageSetup(context: Context, private val paths: LinuxPaths) {
         )),
         BENCHMARK("1", listOf("vkmark", "glmark2-x11", "mesa-utils", "mangohud")),
         // Libraries the arm64 Steam client and its web view link against.
-        STEAM("1", listOf(
+        STEAM("3", listOf(
             "libxrandr2", "libxcursor1", "libxi6", "libxinerama1", "libxcomposite1",
             "libxdamage1", "libxrender1", "libxfixes3", "libxss1", "libxkbcommon0",
             "libxshmfence1", "libglib2.0-0t64", "libgtk2.0-0t64", "libgdk-pixbuf-2.0-0",
             "libpipewire-0.3-0t64", "libopenal1", "libpulse0", "libnm0", "libudev1",
             "libibus-1.0-5", "libsdl3-0", "libnss3", "libnspr4", "libatk1.0-0t64",
             "libatk-bridge2.0-0t64", "libcups2t64", "libdrm2", "libgbm1", "libasound2t64",
-            "libdbus-1-3", "mangohud",
+            "libdbus-1-3", "mangohud", "libva2", "libvdpau1", "libavcodec61", "libavutil59",
+            "lsof", "pciutils",
         )),
     }
 

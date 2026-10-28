@@ -3,6 +3,9 @@ package io.github.pinguplay.display
 import android.app.Activity
 import android.opengl.GLSurfaceView
 import android.os.Bundle
+import android.widget.Button
+import android.widget.FrameLayout
+import android.view.Gravity
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import io.github.pinguplay.linux.LinuxPaths
@@ -26,7 +29,20 @@ class DisplayActivity : Activity() {
         }
         val mouse = TouchMouse({ LinuxSession.input }, ::toScreen)
         surface.setOnTouchListener { _, event -> mouse.onTouch(event) }
-        setContentView(surface)
+        val keyboard = SoftKeyboard(this) { LinuxSession.input }
+        val keyboardButton = Button(this).apply {
+            text = "⌨"
+            textSize = 20f
+            alpha = 0.6f
+            setOnClickListener { keyboard.toggle() }
+        }
+        setContentView(FrameLayout(this).apply {
+            addView(keyboard.view, FrameLayout.LayoutParams(1, 1))
+            addView(surface)
+            addView(keyboardButton, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.END))
+        })
         hideSystemBars()
     }
 

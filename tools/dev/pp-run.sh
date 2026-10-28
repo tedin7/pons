@@ -20,7 +20,7 @@ D=/data/user/0/$PKG; mkdir -p \$D/cache/proot-tmp
 mkdir -p \$D/cache/shm
 export PROOT_X86_RUNNER=/usr/local/bin/box64 PROOT_LOADER=$LIB/libproot-loader.so PROOT_TMP_DIR=\$D/cache/proot-tmp LD_LIBRARY_PATH=$LIB
 echo $SCRIPT_B64 | base64 -d > \$D/cache/proot-tmp/$NAME.sh
-$LAUNCH $LIB/libproot.so --kill-on-exit --link2symlink -0 -r \$D/files/rootfs -b /dev -b /proc -b /sys \
+$LAUNCH $LIB/libproot.so --kill-on-exit --link2symlink --sysvipc -0 -r \$D/files/rootfs -b /dev -b /proc -b /sys \
   -b \$D/cache/proot-tmp:/tmp -b \$D/cache/shm:/dev/shm -w /root /usr/bin/env -i HOME=/root TERM=xterm LANG=C.UTF-8 \
   DISPLAY=:0 XDG_RUNTIME_DIR=/tmp \
   VK_ICD_FILENAMES=/opt/pinguplay/mesa/share/vulkan/icd.d/freedreno_icd.aarch64.json \

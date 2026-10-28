@@ -6,7 +6,30 @@ STEAM="$HOME/.local/share/Steam"
 CDN=https://client-update.steamstatic.com
 MANIFEST=steam_client_publicbeta_linuxarm64
 
-if [ ! -x "$STEAM/steamrtarm64/steam" ]; then
+# Valve's arm64 zip has a few entries with Windows separators ("steamrtarm64\libs\x")
+# and stores no executable bits; Info-ZIP keeps both as-is. Repair after every unzip.
+fix_steam_tree() {
+    cd "$STEAM"
+    for f in *\\*; do
+        [ -e "$f" ] || [ -L "$f" ] || continue
+        target=$(printf '%s' "$f" | tr '\\' '/')
+        if [ -d "$f" ] && [ ! -L "$f" ]; then
+            mkdir -p "$target"; rmdir "$f" 2>/dev/null || true
+        elif [ -L "$f" ] || [ -s "$f" ]; then
+            mkdir -p "$(dirname "$target")"; mv -f "$f" "$target"
+        else
+            rm -f "$f"
+        fi
+    done
+    find "$STEAM/steamrtarm64" -type f ! -perm -u+x | while read -r file; do
+        case "$(head -c 4 "$file" 2>/dev/null)" in
+            "$(printf '\177ELF')"|'#!'*) chmod +x "$file" ;;
+        esac
+    done
+    cd - >/dev/null
+}
+
+if [ ! -f "$STEAM/steamrtarm64/steam" ]; then
     echo "Pinguplay: scarico il client Steam ARM (prima volta)…"
     mkdir -p "$STEAM/package" "$STEAM/steamrtarm64"
     curl -fsSL "$CDN/$MANIFEST" -o "$STEAM/package/$MANIFEST.manifest"
@@ -24,11 +47,22 @@ if [ ! -x "$STEAM/steamrtarm64/steam" ]; then
     rm -f /tmp/steam-bins.zip
     echo publicbeta > "$STEAM/package/beta"
 fi
+fix_steam_tree
+# The links Valve's steam.sh normally creates; the client refuses to start without them.
+mkdir -p "$HOME/.steam"
+ln -sfn "$STEAM" "$HOME/.steam/steam"
+ln -sfn "$STEAM" "$HOME/.steam/root"
 
 cd "$STEAM/steamrtarm64"
 export STEAM_RUNTIME=1
 # Box64 settings chosen on this device by pinguplay-transbench, if it has run.
 [ -f "$HOME/.config/pinguplay/box64-tuned.env" ] && . "$HOME/.config/pinguplay/box64-tuned.env"
-# FPS overlay in Vulkan games (works for x86 games too: Box64 forwards Vulkan to arm64).
-export MANGOHUD="${PINGUPLAY_FPS:-1}"
-exec ./steam -no-cef-sandbox -noverifyfiles "$@"
+# MangoHud must stay off for the client itself: it crashes steamwebhelper's start.
+# For an FPS overlay in a game, set the game's launch options to: MANGOHUD=1 %command%
+export MANGOHUD=0
+# Exit code 42 means "updated, start me again" (Valve's steam.sh loops the same way).
+while :; do
+    ./steam -no-cef-sandbox "$@" && exit 0 || code=$?
+    [ "$code" -eq 42 ] || exit "$code"
+    fix_steam_tree
+done

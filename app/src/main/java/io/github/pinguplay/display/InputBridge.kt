@@ -20,6 +20,9 @@ class InputBridge(private val sink: OutputStream) {
     fun key(keysym: Int, pressed: Boolean) =
         send("K ${Integer.toHexString(keysym)} ${if (pressed) 1 else 0}")
 
+    /** Types one character; the helper adds Shift when the symbol needs it. */
+    fun type(keysym: Int) = send("T ${Integer.toHexString(keysym)}")
+
     fun close() {
         writer.shutdown()
         runCatching { sink.close() }
@@ -41,5 +44,17 @@ class InputBridge(private val sink: OutputStream) {
         const val RIGHT = 3
         const val WHEEL_UP = 4
         const val WHEEL_DOWN = 5
+        const val KEY_BACKSPACE = 0xff08
+        const val KEY_RETURN = 0xff0d
+        const val KEY_TAB = 0xff09
+        const val KEY_ESCAPE = 0xff1b
+
+        /** X11 keysym for a Unicode code point (Latin-1 maps directly). */
+        fun keysymFor(codePoint: Int): Int = when {
+            codePoint == '\n'.code -> KEY_RETURN
+            codePoint == '\t'.code -> KEY_TAB
+            codePoint in 0x20..0xff -> codePoint
+            else -> 0x01000000 or codePoint
+        }
     }
 }
