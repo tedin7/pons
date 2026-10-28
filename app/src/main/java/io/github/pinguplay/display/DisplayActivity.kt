@@ -3,7 +3,10 @@ package io.github.pinguplay.display
 import android.app.Activity
 import android.opengl.GLSurfaceView
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.View
 import android.widget.Button
+import android.widget.TextView
 import android.widget.FrameLayout
 import android.view.Gravity
 import android.view.WindowInsets
@@ -17,6 +20,28 @@ class DisplayActivity : Activity() {
 
     private lateinit var surface: GLSurfaceView
     private lateinit var renderer: FramebufferRenderer
+    private lateinit var status: TextView
+
+    private var touched = false
+
+    /**
+     * While Linux installs or a program is still starting (its window can take a
+     * while to appear), show what is happening instead of a silent black screen.
+     * The first touch hides it.
+     */
+    private val statusUpdater = object : Runnable {
+        override fun run() {
+            val started = LinuxSession.programStartedAt
+            val starting = started != 0L && SystemClock.uptimeMillis() - started < STARTING_MS
+            val waiting = !touched && (renderer.shown == null || !LinuxSession.running || starting)
+            status.visibility = if (waiting) View.VISIBLE else View.GONE
+            if (waiting) {
+                status.text = LinuxSession.log().takeLast(STATUS_LINES).joinToString("\n")
+                    .ifEmpty { "Avvio di Linux…" }
+            }
+            status.postDelayed(this, STATUS_REFRESH_MS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,7 +53,10 @@ class DisplayActivity : Activity() {
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         }
         val mouse = TouchMouse({ LinuxSession.input }, ::toScreen)
-        surface.setOnTouchListener { _, event -> mouse.onTouch(event) }
+        surface.setOnTouchListener { _, event ->
+            touched = true
+            mouse.onTouch(event)
+        }
         val keyboard = SoftKeyboard(this) { LinuxSession.input }
         val keyboardButton = Button(this).apply {
             text = "⌨"
@@ -36,9 +64,18 @@ class DisplayActivity : Activity() {
             alpha = 0.6f
             setOnClickListener { keyboard.toggle() }
         }
+        status = TextView(this).apply {
+            setTextColor(0xFFDDDDDD.toInt())
+            setBackgroundColor(0xB0000000.toInt())
+            textSize = 16f
+            setPadding(48, 48, 48, 48)
+        }
         setContentView(FrameLayout(this).apply {
             addView(keyboard.view, FrameLayout.LayoutParams(1, 1))
             addView(surface)
+            addView(status, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM))
             addView(keyboardButton, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP or Gravity.END))
@@ -49,9 +86,11 @@ class DisplayActivity : Activity() {
     override fun onResume() {
         super.onResume()
         surface.onResume()
+        status.post(statusUpdater)
     }
 
     override fun onPause() {
+        status.removeCallbacks(statusUpdater)
         surface.onPause()
         super.onPause()
     }
@@ -73,5 +112,11 @@ class DisplayActivity : Activity() {
             it.hide(WindowInsets.Type.systemBars())
             it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
+    }
+
+    private companion object {
+        const val STATUS_LINES = 6
+        const val STATUS_REFRESH_MS = 500L
+        const val STARTING_MS = 45_000L
     }
 }

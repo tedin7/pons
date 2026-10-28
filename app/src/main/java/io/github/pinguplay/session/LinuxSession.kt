@@ -30,6 +30,10 @@ object LinuxSession {
     @Volatile var running = false
         private set
 
+    /** When the current program was launched (uptime ms), 0 while installing or idle. */
+    @Volatile var programStartedAt = 0L
+        private set
+
     /** Set by [stop]: errors after it are just the program being torn down. */
     @Volatile private var stopped = false
 
@@ -49,6 +53,7 @@ object LinuxSession {
             startScreen(paths, DisplaySettings(context).resolution)
             startInput(paths)
             running = true
+            programStartedAt = android.os.SystemClock.uptimeMillis()
             emit("▶ $program")
             val payload = launch(paths, program, "program")
             val code = payload.waitFor()
@@ -70,6 +75,7 @@ object LinuxSession {
         processes.clear()
         ProcessTree.killDescendants()
         running = false
+        programStartedAt = 0L
     }
 
     private fun installMissing(context: Context, paths: LinuxPaths, program: String) {

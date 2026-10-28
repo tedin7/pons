@@ -48,6 +48,13 @@ if [ ! -f "$STEAM/steamrtarm64/steam" ]; then
     echo publicbeta > "$STEAM/package/beta"
 fi
 fix_steam_tree
+# Steam verifies its web UI's local connection with lsof, which cannot see sockets
+# on Android: put Pinguplay's stand-in in its place (see pinguplay-lsof).
+if [ "$(readlink /usr/bin/lsof 2>/dev/null)" != /opt/pinguplay/bin/pinguplay-lsof ]; then
+    [ -e /usr/bin/lsof.real ] ||
+        dpkg-divert --quiet --local --rename --divert /usr/bin/lsof.real --add /usr/bin/lsof
+    ln -sf /opt/pinguplay/bin/pinguplay-lsof /usr/bin/lsof
+fi
 # The links Valve's steam.sh normally creates; the client refuses to start without them.
 mkdir -p "$HOME/.steam"
 ln -sfn "$STEAM" "$HOME/.steam/steam"
@@ -62,7 +69,8 @@ export STEAM_RUNTIME=1
 export MANGOHUD=0
 # Exit code 42 means "updated, start me again" (Valve's steam.sh loops the same way).
 while :; do
-    ./steam -no-cef-sandbox "$@" && exit 0 || code=$?
+    # The web UI's GPU process needs DRI3, which Xvfb lacks: draw menus in software.
+    ./steam -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing "$@" && exit 0 || code=$?
     [ "$code" -eq 42 ] || exit "$code"
     fix_steam_tree
 done

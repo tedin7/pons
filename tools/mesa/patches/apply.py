@@ -29,6 +29,7 @@ replace_once("""   bool                                         has_mit_shm;
    bool                                         has_async_may_tear;
    /* Pinguplay direct present: window origin on the root window, looked up once. */
    bool                                         pinguplay_origin_known;
+   bool                                         pinguplay_fullscreen;
    int16_t                                      pinguplay_x;
    int16_t                                      pinguplay_y;""")
 
@@ -48,6 +49,11 @@ x11_present_pinguplay(struct x11_swapchain *chain, struct x11_image *image)
       xcb_screen_t *screen = xcb_setup_roots_iterator(setup).data;
       if (screen == NULL)
          return false;
+      /* Only full-screen windows (games) bypass the X server; dialogs and
+       * launchers stay ordinary windows on the desktop the app also shows. */
+      chain->pinguplay_fullscreen =
+         chain->extent.width == screen->width_in_pixels &&
+         chain->extent.height == screen->height_in_pixels;
       xcb_translate_coordinates_reply_t *origin = xcb_translate_coordinates_reply(
          chain->conn, xcb_translate_coordinates(chain->conn, chain->window, screen->root, 0, 0),
          NULL);
@@ -58,6 +64,8 @@ x11_present_pinguplay(struct x11_swapchain *chain, struct x11_image *image)
       chain->pinguplay_origin_known = true;
       free(origin);
    }
+   if (!chain->pinguplay_fullscreen || chain->pinguplay_x != 0 || chain->pinguplay_y != 0)
+      return false;
    return pinguplay_fb_present(chain->pinguplay_x, chain->pinguplay_y,
                                chain->extent.width, chain->extent.height,
                                (const uint8_t *)image->base.cpu_map,
