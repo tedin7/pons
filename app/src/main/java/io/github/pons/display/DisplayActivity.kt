@@ -23,6 +23,7 @@ class DisplayActivity : Activity() {
     private lateinit var renderer: FramebufferRenderer
     private lateinit var status: TextView
 
+    private lateinit var thermal: ThermalGovernor
     private var touched = false
     private var vsyncCount = 0L
 
@@ -63,6 +64,9 @@ class DisplayActivity : Activity() {
         AhbFrames.startServer()
         val paths = LinuxPaths(this)
         renderer = FramebufferRenderer(paths.framebuffer, paths.present, DisplaySettings(this).sharpness)
+        thermal = ThermalGovernor(
+            this, renderer::gameIsPresenting, renderer::setFpsCap,
+            enabled = { DisplaySettings(this).thermalGovernor })
         surface = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
             setRenderer(renderer)
@@ -112,9 +116,11 @@ class DisplayActivity : Activity() {
         surface.onResume()
         status.post(statusUpdater)
         Choreographer.getInstance().postFrameCallback(vsyncDriver)
+        thermal.start()
     }
 
     override fun onPause() {
+        thermal.stop()
         status.removeCallbacks(statusUpdater)
         Choreographer.getInstance().removeFrameCallback(vsyncDriver)
         surface.onPause()

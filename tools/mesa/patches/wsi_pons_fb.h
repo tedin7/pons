@@ -63,7 +63,9 @@ struct pons_present_header {
     * the previous one. Averages hide these; the eye does not. */
    _Atomic uint32_t late_50ms;
    _Atomic uint32_t late_100ms;
-   uint8_t reserved[8];
+   /* Frame cap set by the app at runtime (its thermal governor); 0 = PONS_MAX_FPS. */
+   _Atomic uint32_t fps_cap;
+   uint8_t reserved[4];
 };
 
 _Static_assert(sizeof(struct pons_present_header) == 64, "header is 64 bytes");
@@ -301,10 +303,15 @@ pons_present_map(struct pons_present *p, uint32_t width, uint32_t height)
 static void
 pons_present_pace(struct pons_present *p)
 {
-   if (p->frame_interval_ns == 0)
+   /* The app's runtime cap can only lower the frame rate, never raise it above
+    * the game's own PONS_MAX_FPS: the longer interval wins. */
+   const uint32_t cap = atomic_load_explicit(&p->header->fps_cap, memory_order_relaxed);
+   const uint64_t cap_ns = cap ? 1000000000ull / cap : 0;
+   const uint64_t interval = cap_ns > p->frame_interval_ns ? cap_ns : p->frame_interval_ns;
+   if (interval == 0)
       return;
    const uint64_t now = pons_now_ns();
-   const uint64_t due = p->last_frame_ns + p->frame_interval_ns;
+   const uint64_t due = p->last_frame_ns + interval;
    if (p->last_frame_ns != 0 && now < due) {
       const uint64_t wait = due - now;
       struct timespec ts = { (time_t)(wait / 1000000000ull), (long)(wait % 1000000000ull) };

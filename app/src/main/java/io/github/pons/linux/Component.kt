@@ -36,10 +36,10 @@ object Components {
         // (triple-buffered full-screen frames handed to the app without the X server), softpipe so
         // Xvfb can offer GLX while games render through Zink on the GPU, and async software
         // present (the GPU wait moved off the game's thread).
-        version = "main-f01e9b0-pp7",
-        sizeBytes = 7_202_496,
-        sha256 = "99035daef43afbf35be55d1d4dca7214d5b89ffcf534106060977c9eeb4eb651",
-        url = "${BASE}mesa-main-f01e9b0-pp7-pons.tar.xz",
+        version = "main-f01e9b0-pp8",
+        sizeBytes = 7_201_364,
+        sha256 = "b5d618bbe912bd8d5e1449a078c7ec5c9b65ca100d5dbe93ce06b06fe0ec3e7b",
+        url = "${BASE}mesa-main-f01e9b0-pp8-pons.tar.xz",
         replaces = "opt/pons/mesa",
     )
 
@@ -48,18 +48,18 @@ object Components {
         // Box64 main after v0.4.4 (LRCPC/LRCPC2 on Arm64) plus Pons's patch that
         // skips FPCR rounding switches on exact int32 -> double conversions, and one that
         // saves the translation cache while the game runs (games here are killed, not exited).
-        version = "main-11a20e37-pp2",
-        sizeBytes = 8_562_312,
-        sha256 = "1589c2ba17a7b634034130b0d0a821c4d82f1eb8f5434ee14e552043c7f7bf8b",
-        url = "${BASE}box64-main-11a20e37-pp2-pons.tar.xz",
+        version = "main-11a20e37-pp3",
+        sizeBytes = 8_549_448,
+        sha256 = "362acbf1cf84d3452978cc09d4c8eb0c08bd79491f2356f0ab2b51ea4ed19977",
+        url = "${BASE}box64-main-11a20e37-pp3-pons.tar.xz",
     )
 
     val TOOLS = Component(
         id = "tools",
-        version = "23",
-        sizeBytes = 253_112,
-        sha256 = "d2db77816d1ef789de5f5e8144eedf86fb6ef34d082d76ae287c755542f7c6cc",
-        url = "${BASE}pons-tools-23.tar.xz",
+        version = "25",
+        sizeBytes = 257_900,
+        sha256 = "8e3d0413ac0407396afe091464949d0bed6edf4b3ff67729123bd9a51f5279de",
+        url = "${BASE}pons-tools-25.tar.xz",
     )
 
     /** Order matters: the rootfs must exist before anything unpacks into it. */

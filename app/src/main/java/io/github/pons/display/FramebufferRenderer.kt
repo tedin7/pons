@@ -40,6 +40,9 @@ class FramebufferRenderer(
     /** True when a game published a frame we have not drawn yet. */
     fun hasNewGameFrame(): Boolean = presentProbe.sequence().let { it != 0L && it != presentSequence }
 
+    /** Caps the game's frame rate (0 = Mesa's default); call from the UI thread only. */
+    fun setFpsCap(fps: Int) = presentProbe.setFpsCap(fps)
+
     /** True while a game is presenting (its frames drive redraws). */
     fun gameIsPresenting(): Boolean = System.nanoTime() - presentSeenAt < PRESENT_TIMEOUT_NS
 

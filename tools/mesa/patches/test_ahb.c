@@ -17,8 +17,9 @@ static pid_t start_server(int *ready_fd, bool reply_no)
 {
    int ls = socket(AF_UNIX, SOCK_STREAM, 0);
    struct sockaddr_un a = { .sun_family = AF_UNIX };
-   memcpy(a.sun_path + 1, "pons-ahb", 13);
-   assert(bind(ls, (struct sockaddr *)&a, offsetof(struct sockaddr_un, sun_path) + 14) == 0);
+   static const char name[] = "pons-ahb";
+   memcpy(a.sun_path + 1, name, sizeof(name) - 1);
+   assert(bind(ls, (struct sockaddr *)&a, offsetof(struct sockaddr_un, sun_path) + sizeof(name)) == 0);
    assert(listen(ls, 4) == 0);
    (void)ready_fd;
    pid_t pid = fork();

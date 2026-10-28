@@ -1,0 +1,60 @@
+#!/bin/sh
+# pons-prof <out-dir> <command...>
+# Runs one workload and records raw telemetry for tools/dev/pp-prof.sh to rank:
+#   out/phases.txt    the workload's own stdout (loadsim prints "phase ms count")
+#   out/samples.tsv   every 0.5 s, per thread: time pid tid name utime stime (ticks)
+#                     and per process: minflt majflt vctx nvctx syscr syscw rbytes
+#   out/times.txt     wall seconds, then user and system seconds of the workload
+#   out/calls.txt     Box64 native calls per function (PONS_CALLSTATS)
+# Needs no screen and no app UI. proot's own counters are collected by the caller.
+set -u
+OUT="${1:?out dir}"; shift
+mkdir -p "$OUT"
+HZ=$(getconf CLK_TCK)
+
+# Box64 counts native calls only in blocks it translates now, not in cached ones.
+export PONS_CALLSTATS="$OUT/calls.txt" BOX64_DYNACACHE="${BOX64_DYNACACHE:-0}" BOX64_LOG=0
+
+descendants() {
+    awk -v root="$1" 'FNR == 1 { split($0, f, ") "); split(f[2], g, " "); pid = FILENAME;
+        sub("/proc/", "", pid); sub("/stat", "", pid); parent[pid] = g[2] }
+        END { want[root] = 1; changed = 1
+              while (changed) { changed = 0
+                  for (p in parent) if (!(p in want) && (parent[p] in want)) { want[p] = 1; changed = 1 } }
+              for (p in want) print p }' /proc/[0-9]*/stat 2>/dev/null
+}
+
+sample() {
+    now=$1; root=$2
+    for pid in $(descendants "$root"); do
+        for t in /proc/"$pid"/task/*/stat; do
+            awk -v now="$now" -v pid="$pid" '{ o = index($0, "("); c = index($0, ") ");
+                name = substr($0, o + 1, c - o - 1); gsub(/[ \t]/, "_", name);
+                split(substr($0, c + 2), f, " ");
+                print "T\t" now "\t" pid "\t" $1 "\t" name "\t" f[12] "\t" f[13] }' "$t" 2>/dev/null
+        done
+        {
+            awk '{ c = index($0, ") "); split(substr($0, c + 2), f, " "); print f[8], f[10] }' /proc/"$pid"/stat
+            awk '/^voluntary_ctxt/ { v = $2 } /^nonvoluntary_ctxt/ { n = $2 } END { print v, n }' /proc/"$pid"/status
+            awk '/^syscr/ { r = $2 } /^syscw/ { w = $2 } /^read_bytes/ { b = $2 } END { print r, w, b }' /proc/"$pid"/io
+        } 2>/dev/null | tr '\n' ' ' | awk -v now="$now" -v pid="$pid" 'NF { print "P\t" now "\t" pid "\t" $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 }'
+    done
+}
+
+start=$(awk '{ print $1 }' /proc/uptime)
+"$@" > "$OUT/phases.txt" 2> "$OUT/stderr.txt" &
+root=$!
+: > "$OUT/samples.tsv"
+while kill -0 "$root" 2>/dev/null; do
+    now=$(awk -v s="$start" '{ printf "%.2f", $1 - s }' /proc/uptime)
+    sample "$now" "$root" >> "$OUT/samples.tsv"
+    sleep 0.5
+done
+wait "$root"
+status=$?
+end=$(awk '{ print $1 }' /proc/uptime)
+# times: shell user/sys, then children user/sys (the workload and everything it waited for).
+times | awk -v s="$start" -v e="$end" -v st="$status" 'NR == 2 {
+    split($1, u, "m"); split($2, y, "m");
+    printf "%.2f %.2f %.2f %d\n", e - s, u[1] * 60 + u[2], y[1] * 60 + y[2], st }' > "$OUT/times.txt"
+echo "HZ $HZ" >> "$OUT/times.txt"

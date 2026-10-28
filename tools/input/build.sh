@@ -27,6 +27,10 @@ docker run --rm -v "$HERE":/src:ro -v "$HERE/../compat":/compat:ro -v "$HERE/../
   gcc -O2 -Wall -Wextra -march=x86-64-v2 -o /stage/opt/pons/bench/sysbench-x86_64 /bench/sysbench.c
   aarch64-linux-gnu-gcc -O2 -Wall -Wextra -march=armv8.7-a -o /stage/opt/pons/bench/sysbench-arm64 /bench/sysbench.c
   aarch64-linux-gnu-gcc -O2 -Wall -Wextra -march=armv8.7-a -static -o /stage/opt/pons/bench/sysbench-arm64-static /bench/sysbench.c
+  gcc -O2 -Wall -Wextra -march=x86-64-v2 -pthread -o /stage/opt/pons/bench/loadsim-x86_64 /bench/loadsim.c -lm
+  aarch64-linux-gnu-gcc -O2 -Wall -Wextra -march=armv8.7-a -pthread -o /stage/opt/pons/bench/loadsim-arm64 /bench/loadsim.c -lm
+  strip /stage/opt/pons/bench/loadsim-x86_64
+  aarch64-linux-gnu-strip /stage/opt/pons/bench/loadsim-arm64
   strip /stage/opt/pons/bench/transbench-x86_64 /stage/opt/pons/bench/bridgecost-x86_64 /stage/opt/pons/bench/sysbench-x86_64
   aarch64-linux-gnu-strip /stage/opt/pons/bench/sysbench-arm64 /stage/opt/pons/bench/sysbench-arm64-static
   aarch64-linux-gnu-strip /stage/opt/pons/bench/transbench-arm64 /stage/opt/pons/bench/bridgecost-arm64

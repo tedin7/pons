@@ -34,6 +34,9 @@ class PresentBuffer(private val file: File) {
     private var inode = -1L
     private var checks = 0
 
+    /** Last cap given to [setFpsCap]; re-applied when Mesa replaces the file. */
+    @Volatile private var fpsCap = 0
+
     /** Returns the newest frame if it is newer than [lastSequence], else null. */
     fun acquire(lastSequence: Long): Frame? {
         val m = mapping() ?: return null
@@ -64,6 +67,15 @@ class PresentBuffer(private val file: File) {
     /** Number of frames published so far (0 when no game presents); cheap, no copy. */
     fun sequence(): Long = mapping()?.getLong(OFF_SEQUENCE) ?: 0L
 
+    /**
+     * Asks Mesa to pace frames at [fps] (0 = back to its own default). Mesa re-reads it
+     * on every frame. Does nothing until the file is mapped; then the value is applied.
+     */
+    fun setFpsCap(fps: Int) {
+        fpsCap = fps.coerceAtLeast(0)
+        map?.putInt(OFF_FPS_CAP, fpsCap)
+    }
+
     /** Lets the writer reuse the buffer handed out by [acquire]. */
     fun release() {
         map?.let {
@@ -87,6 +99,8 @@ class PresentBuffer(private val file: File) {
         if (m.capacity() < expected) return null
         inode = inodeOf()
         map = m
+        // A resized game gets a fresh header: keep the cap we set.
+        if (fpsCap != 0) m.putInt(OFF_FPS_CAP, fpsCap)
         return m
     }
 
@@ -110,6 +124,7 @@ class PresentBuffer(private val file: File) {
         private const val OFF_SEQUENCE = 32
         private const val OFF_X = 40
         private const val OFF_Y = 44
+        private const val OFF_FPS_CAP = 56
         private const val REOPEN_CHECK_CALLS = 30
     }
 }
