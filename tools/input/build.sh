@@ -18,6 +18,7 @@ docker run --rm -v "$HERE":/src:ro -v "$HERE/../compat":/compat:ro -v "$HERE/../
   aarch64-linux-gnu-gcc -O2 -Wall -Wextra -shared -fPIC -o /stage/opt/pinguplay/lib/libpinguplay-fastpath.so /compat/pinguplay-fastpath.c -ldl
   aarch64-linux-gnu-strip /stage/opt/pinguplay/lib/libpinguplay-fastpath.so
   mkdir -p /stage/opt/pinguplay/bench
+  aarch64-linux-gnu-gcc -O2 -Wall -Wextra -o /stage/opt/pinguplay/bench/fastpath-check /compat/fastpath-check.c
   # Same flags on both sides; no FMA contraction so results match bit for bit.
   g++ -O2 -std=c++17 -march=x86-64-v2 -ffp-contract=off -pthread -o /stage/opt/pinguplay/bench/transbench-x86_64 /bench/transbench.cpp
   aarch64-linux-gnu-g++ -O2 -std=c++17 -march=armv8.7-a -ffp-contract=off -pthread -o /stage/opt/pinguplay/bench/transbench-arm64 /bench/transbench.cpp

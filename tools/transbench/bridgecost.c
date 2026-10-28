@@ -1,5 +1,6 @@
 /* bridgecost: nanoseconds per call into the C library, to isolate Box64's
- * x86 -> native bridge cost. Built with -fno-builtin so calls are real calls. */
+ * x86 -> native bridge cost. Built with -fno-builtin so calls are real calls.
+ * Output: "name ns" lines (the stderr checksum keeps the loops from being removed). */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +31,13 @@ int main(void)
     t = now_ns();
     for (int i = 0; i < CALLS; i++) acc += exp(-i * 1e-8);
     printf("exp_direct %.2f ns\n", (now_ns() - t) / CALLS);
+
+    /* Each call waits for the previous one: shows whether calls can overlap. */
+    double x = 0.5;
+    t = now_ns();
+    for (int i = 0; i < CALLS; i++) x = exp(x * -1e-3);
+    printf("exp_chained %.2f ns\n", (now_ns() - t) / CALLS);
+    acc += x;
 
     t = now_ns();
     for (int i = 0; i < CALLS; i++) acc += abs(i - 7);

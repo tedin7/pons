@@ -13,9 +13,10 @@
  * lets marked calls through without a stop.
  *
  * Anything unusual falls back to the normal libc call, so proot still handles
- * it: /proc, /dev and /sys, directory-fd relative paths, symlink loops, very long
- * paths. Only read-side calls are covered (open, stat, access, readlink, fopen,
- * opendir); writes that change the tree go through proot as before.
+ * it: /proc, /dev and /sys, symlink loops, very long paths, paths relative to a
+ * directory we did not open. Covered: open/openat, stat family, access, readlink,
+ * realpath, statfs/statvfs, fopen, opendir; writes that change the tree go
+ * through proot as before.
  *
  * Enabled by PINGUPLAY_FASTPATH_ROOT=<host rootfs> and
  * PINGUPLAY_FASTPATH_BINDS=<guest>=<host>[:<guest>=<host>...]; otherwise every
@@ -32,6 +33,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
+#include <sys/statvfs.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -52,9 +55,12 @@ static struct bind binds[MAX_BINDS];
 static int nbinds;
 static uid_t host_uid = (uid_t)-1;
 static gid_t host_gid = (gid_t)-1;
-/* Descriptors we opened: proot traces close() too, so we close those ourselves. */
+/* Descriptors we opened: proot traces close() too, so we close those ourselves.
+ * We also keep their guest path, so calls relative to a directory we opened
+ * (openat(dirfd, "name")) need no proot stop either. */
 #define MAX_FAST_FD 65536
 static unsigned char fast_fds[MAX_FAST_FD / 8];
+static char *fd_paths[MAX_FAST_FD];
 static __thread char cwd_cache[PATH_MAX];
 static __thread int cwd_valid;
 
@@ -80,10 +86,23 @@ static long fast_faccessat(const char *host, int mode, int flags)
     return syscall(SYS_faccessat2, AT_FDCWD, host, mode, flags, 0, PROOT_FASTPATH_MAGIC);
 }
 
-static void remember_fd(long fd)
+static long fast_fstat(int fd, struct stat *st)
 {
-    if (fd >= 0 && fd < MAX_FAST_FD)
-        __atomic_fetch_or(&fast_fds[fd / 8], (unsigned char)(1u << (fd % 8)), __ATOMIC_RELAXED);
+    return syscall(SYS_fstat, fd, st, 0, 0, 0, PROOT_FASTPATH_MAGIC);
+}
+
+static void set_fd_path(long fd, const char *guest)
+{
+    char *copy = guest ? strdup(guest) : NULL;
+    free(__atomic_exchange_n(&fd_paths[fd], copy, __ATOMIC_ACQ_REL));
+}
+
+static void remember_fd(long fd, const char *guest)
+{
+    if (fd < 0 || fd >= MAX_FAST_FD)
+        return;
+    __atomic_fetch_or(&fast_fds[fd / 8], (unsigned char)(1u << (fd % 8)), __ATOMIC_RELAXED);
+    set_fd_path(fd, guest);
 }
 
 /* True (and forgotten) when @fd came from the fast path. */
@@ -91,6 +110,7 @@ static int forget_fd(int fd)
 {
     if (fd < 0 || fd >= MAX_FAST_FD)
         return 0;
+    set_fd_path(fd, NULL);
     unsigned char bit = (unsigned char)(1u << (fd % 8));
     return __atomic_fetch_and(&fast_fds[fd / 8], (unsigned char)~bit, __ATOMIC_RELAXED) & bit;
 }
@@ -190,12 +210,43 @@ static int guest_cwd(char *out)
     return 0;
 }
 
+static int map_to_host(const char *guest, char *host);
+
 /*
- * Resolves @path like the kernel would inside the guest, following symlinks
- * (the last one too when @follow_last), and writes the host path to @host.
- * Returns 0, or -1 to let proot handle the call.
+ * Guest path of directory @dirfd if we opened it and it is still the same file
+ * (the number may have been reused for something else since). Returns 0 or -1.
  */
-static int resolve(const char *path, int follow_last, char *host)
+static int dir_path(int dirfd, char *out)
+{
+    if (dirfd < 0 || dirfd >= MAX_FAST_FD)
+        return -1;
+    char *known = __atomic_exchange_n(&fd_paths[dirfd], NULL, __ATOMIC_ACQ_REL);
+    if (!known)
+        return -1;
+    int ok = strlen(known) < PATH_MAX;
+    if (ok)
+        strcpy(out, known);
+    char *other = NULL;
+    if (!__atomic_compare_exchange_n(&fd_paths[dirfd], &other, known, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+        free(known); /* replaced meanwhile: the newer entry wins */
+    if (!ok)
+        return -1;
+    char host[PATH_MAX];
+    struct stat by_fd, by_path;
+    if (map_to_host(out, host) < 0 || fast_fstat(dirfd, &by_fd) != 0
+        || fast_fstatat(host, &by_path, 0) != 0)
+        return -1;
+    return (by_fd.st_dev == by_path.st_dev && by_fd.st_ino == by_path.st_ino
+            && S_ISDIR(by_fd.st_mode)) ? 0 : -1;
+}
+
+/*
+ * Resolves @path like the kernel would inside the guest, relative to @dirfd when
+ * it is not absolute, following symlinks (the last one too when @follow_last).
+ * Writes the host path to @host and, when @guest is not NULL, the canonical guest
+ * path. Returns 0, or -1 to let proot handle the call.
+ */
+static int resolve_at(int dirfd, const char *path, int follow_last, char *host, char *guest)
 {
     char todo[PATH_MAX * 2];   /* components still to walk, '/'-separated */
     char done[PATH_MAX];       /* canonical guest path walked so far */
@@ -208,8 +259,10 @@ static int resolve(const char *path, int follow_last, char *host)
     if (path[0] == '/') {
         strcpy(todo, path);
     } else {
-        char cwd[PATH_MAX];
-        if (guest_cwd(cwd) < 0 || snprintf(todo, sizeof todo, "%s/%s", cwd, path) >= (int)sizeof todo)
+        char base[PATH_MAX];
+        if (dirfd == AT_FDCWD ? guest_cwd(base) < 0 : dir_path(dirfd, base) < 0)
+            return -1;
+        if (snprintf(todo, sizeof todo, "%s/%s", base, path) >= (int)sizeof todo)
             return -1;
     }
     done[0] = '\0';
@@ -296,7 +349,14 @@ static int resolve(const char *path, int follow_last, char *host)
             done[dlen++] = '/';
         strcpy(done + dlen, p + strspn(p, "/"));
     }
+    if (guest)
+        strcpy(guest, done);
     return map_to_host(done, host);
+}
+
+static int resolve(const char *path, int follow_last, char *host)
+{
+    return resolve_at(AT_FDCWD, path, follow_last, host, NULL);
 }
 
 /* ---- the libc functions ---- */
@@ -322,15 +382,13 @@ int fchdir(int fd)
 
 static int open_common(int dirfd, const char *path, int flags, mode_t mode, int *handled)
 {
-    char host[PATH_MAX];
+    char host[PATH_MAX], guest[PATH_MAX];
     *handled = 0;
-    if (dirfd != AT_FDCWD && path && path[0] != '/')
-        return -1;
-    if (resolve(path, !(flags & O_NOFOLLOW), host) < 0)
+    if (resolve_at(dirfd, path, !(flags & O_NOFOLLOW), host, guest) < 0)
         return -1;
     *handled = 1;
     long fd = fast_openat(host, flags, mode);
-    remember_fd(fd);
+    remember_fd(fd, guest);
     return (int)fd;
 }
 
@@ -389,12 +447,12 @@ static int stat_common(int dirfd, const char *path, struct stat *st, int flags, 
 {
     char host[PATH_MAX];
     *handled = 0;
-    if ((dirfd != AT_FDCWD && path && path[0] != '/') || (flags & AT_EMPTY_PATH))
+    if (flags & AT_EMPTY_PATH)
         return -1;
-    if (resolve(path, !(flags & AT_SYMLINK_NOFOLLOW), host) < 0)
+    if (resolve_at(dirfd, path, !(flags & AT_SYMLINK_NOFOLLOW), host, NULL) < 0)
         return -1;
     *handled = 1;
-    int r = (int)fast_fstatat(host, st, flags & AT_NO_AUTOMOUNT);
+    int r = (int)fast_fstatat(host, st, flags & (AT_NO_AUTOMOUNT | AT_SYMLINK_NOFOLLOW));
     if (r == 0)
         fake_root(st);
     return r;
@@ -457,17 +515,19 @@ int access(const char *path, int mode)
 int faccessat(int dirfd, const char *path, int mode, int flags)
 {
     char host[PATH_MAX];
-    if ((dirfd == AT_FDCWD || path[0] == '/') && !(flags & AT_EMPTY_PATH)
-        && resolve(path, !(flags & AT_SYMLINK_NOFOLLOW), host) == 0)
+    if (!(flags & AT_EMPTY_PATH)
+        && resolve_at(dirfd, path, !(flags & AT_SYMLINK_NOFOLLOW), host, NULL) == 0)
         return (int)fast_faccessat(host, mode, flags);
     REAL(faccessat);
     return real_faccessat(dirfd, path, mode, flags);
 }
 
-ssize_t readlink(const char *path, char *buf, size_t size)
+static ssize_t readlink_common(int dirfd, const char *path, char *buf, size_t size, int *handled)
 {
     char host[PATH_MAX];
-    if (resolve(path, 0, host) == 0) {
+    *handled = 0;
+    if (resolve_at(dirfd, path, 0, host, NULL) == 0) {
+        *handled = 1;
         char tmp[PATH_MAX];
         long n = fast_readlink(host, tmp, sizeof tmp - 1);
         if (n < 0)
@@ -482,8 +542,27 @@ ssize_t readlink(const char *path, char *buf, size_t size)
         memcpy(buf, out, len);
         return (ssize_t)len;
     }
+    return -1;
+}
+
+ssize_t readlink(const char *path, char *buf, size_t size)
+{
+    int handled;
+    ssize_t n = readlink_common(AT_FDCWD, path, buf, size, &handled);
+    if (handled)
+        return n;
     REAL(readlink);
     return real_readlink(path, buf, size);
+}
+
+ssize_t readlinkat(int dirfd, const char *path, char *buf, size_t size)
+{
+    int handled;
+    ssize_t n = readlink_common(dirfd, path, buf, size, &handled);
+    if (handled)
+        return n;
+    REAL(readlinkat);
+    return real_readlinkat(dirfd, path, buf, size);
 }
 
 /* fopen/opendir open the file through libc internals proot would trap: open it here. */
@@ -527,11 +606,12 @@ DEFINE_FOPEN(fopen64)
 
 DIR *opendir(const char *path)
 {
-    char host[PATH_MAX];
-    if (resolve(path, 1, host) == 0) {
+    char host[PATH_MAX], guest[PATH_MAX];
+    if (resolve_at(AT_FDCWD, path, 1, host, guest) == 0) {
         int fd = (int)fast_openat(host, O_RDONLY | O_DIRECTORY | O_CLOEXEC, 0);
         if (fd < 0)
             return NULL;
+        remember_fd(fd, guest);
         DIR *d = fdopendir(fd);
         if (!d)
             close(fd);
@@ -540,3 +620,69 @@ DIR *opendir(const char *path)
     REAL(opendir);
     return real_opendir(path);
 }
+
+/* closedir closes through libc internals: forget the descriptor first. */
+int closedir(DIR *d)
+{
+    REAL(closedir);
+    forget_fd(dirfd(d));
+    return real_closedir(d);
+}
+
+/* realpath walks the path with lstat/readlink, one proot stop each: resolve it here. */
+char *realpath(const char *path, char *resolved)
+{
+    char host[PATH_MAX], guest[PATH_MAX];
+    struct stat st;
+    if (path && resolve_at(AT_FDCWD, path, 1, host, guest) == 0) {
+        if (fast_fstatat(host, &st, 0) != 0)
+            return NULL; /* errno from the kernel, like realpath */
+        if (!resolved)
+            return strdup(guest);
+        strcpy(resolved, guest);
+        return resolved;
+    }
+    REAL(realpath);
+    return real_realpath(path, resolved);
+}
+
+char *canonicalize_file_name(const char *path) { return realpath(path, NULL); }
+
+char *__realpath_chk(const char *path, char *resolved, size_t size)
+{
+    (void)size;
+    return realpath(path, resolved);
+}
+
+int statfs(const char *path, struct statfs *buf)
+{
+    char host[PATH_MAX];
+    if (resolve(path, 1, host) == 0)
+        return (int)syscall(SYS_statfs, host, buf, 0, 0, 0, PROOT_FASTPATH_MAGIC);
+    REAL(statfs);
+    return real_statfs(path, buf);
+}
+
+int statfs64(const char *path, struct statfs64 *buf) { return statfs(path, (struct statfs *)buf); }
+
+int statvfs(const char *path, struct statvfs *buf)
+{
+    char host[PATH_MAX];
+    if (resolve(path, 1, host) == 0) {
+        int fd = (int)fast_openat(host, O_PATH | O_CLOEXEC, 0);
+        if (fd < 0)
+            return -1;
+        int r = fstatvfs(fd, buf);
+        int saved = errno;
+        syscall(SYS_close, fd, 0, 0, 0, 0, PROOT_FASTPATH_MAGIC);
+        errno = saved;
+        return r;
+    }
+    REAL(statvfs);
+    return real_statvfs(path, buf);
+}
+
+int statvfs64(const char *path, struct statvfs64 *buf) { return statvfs(path, (struct statvfs *)buf); }
+
+int euidaccess(const char *path, int mode) { return faccessat(AT_FDCWD, path, mode, AT_EACCESS); }
+int eaccess(const char *path, int mode) { return faccessat(AT_FDCWD, path, mode, AT_EACCESS); }

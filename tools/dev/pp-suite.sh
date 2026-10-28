@@ -15,6 +15,6 @@ WHEN=$(date +%F_%T)
     # Static arm64 build, run straight from the app's data folder: no proot at all.
     $S shell "run-as io.github.pinguplay files/rootfs/opt/pinguplay/bench/sysbench-arm64-static" 2>/dev/null \
         | awk '{printf "syscall %s-noproot %s ns\n", $1, $2}'
-} | tr -d '\r' | grep -E '^(box64|syscall) ' | while read -r layer test value unit; do
+} | tr -d '\r' | grep -E '^(box64|bridge|syscall) ' | while read -r layer test value unit; do
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$WHEN" "$LABEL" "$layer" "$test" "$value" "$unit" | tee -a "$RESULTS"
 done

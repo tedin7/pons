@@ -2,6 +2,7 @@
 # pinguplay-suite: quick standard measurements of each layer, no screen needed.
 # One "layer test value unit" line per result, so runs can be diffed and charted:
 #   box64    <workload>  x86 speed as % of native arm64 (transbench, best of 3)
+#   bridge   <call>      ns per call into libc/libm, native and from x86 code
 #   syscall  <call>      ns per call, native and through Box64 (sysbench), with and
 #                        without the fast path
 # Takes about a minute. Games are measured separately (tools/dev/pp-bench.sh).
@@ -20,6 +21,10 @@ best_of "$TMP"/n? > "$TMP/native"
 best_of "$TMP"/x? > "$TMP/x86"
 join "$TMP/native" "$TMP/x86" | awk '{printf "box64 %s %.0f %%\n", $1, 100 * $2 / $3}'
 join "$TMP/native" "$TMP/x86" | awk '{s += log($2 / $3); n++} END {if (n) printf "box64 score %.0f %%\n", 100 * exp(s / n)}'
+
+# Cost of one call from x86 code into a native library function (Box64's bridge).
+"$B/bridgecost-arm64" 2>/dev/null | awk '{printf "bridge %s-native %s ns\n", $1, $2}'
+box64 "$B/bridgecost-x86_64" 2>/dev/null | awk '{printf "bridge %s-box64 %s ns\n", $1, $2}'
 
 "$B/sysbench-arm64" | awk '{printf "syscall %s-native %s ns\n", $1, $2}'
 box64 "$B/sysbench-x86_64" 2>/dev/null | awk '{printf "syscall %s-box64 %s ns\n", $1, $2}'
