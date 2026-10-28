@@ -28,10 +28,20 @@ class FramebufferRenderer(
     @Volatile var shown: ShownArea? = null
         private set
 
+    @Volatile private var presentSequence = 0L
+    @Volatile private var presentSeenAt = 0L
+
     private var framebuffer: XvfbFramebuffer? = null
     private val present = PresentBuffer(presentFile)
-    private var presentSequence = 0L
-    private var presentSeenAt = 0L
+
+    /** Read from the UI thread on every vsync to decide whether to draw at all. */
+    private val presentProbe = PresentBuffer(presentFile)
+
+    /** True when a game published a frame we have not drawn yet. */
+    fun hasNewGameFrame(): Boolean = presentProbe.sequence().let { it != 0L && it != presentSequence }
+
+    /** True while a game is presenting (its frames drive redraws). */
+    fun gameIsPresenting(): Boolean = System.nanoTime() - presentSeenAt < PRESENT_TIMEOUT_NS
 
     /** Where the Linux screen sits inside the view, for touch mapping. */
     @Volatile var viewport = IntArray(4)

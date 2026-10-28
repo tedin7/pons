@@ -8,6 +8,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import android.widget.FrameLayout
+import android.view.Choreographer
 import android.view.Gravity
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -23,6 +24,20 @@ class DisplayActivity : Activity() {
     private lateinit var status: TextView
 
     private var touched = false
+    private var vsyncCount = 0L
+
+    /**
+     * Each vsync: redraw when the game published a new frame; when no game presents,
+     * refresh the desktop every other vsync (it has no frame counter to watch).
+     */
+    private val vsyncDriver = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            vsyncCount++
+            val desktopTick = !renderer.gameIsPresenting() && vsyncCount % DESKTOP_VSYNC_DIVIDER == 0L
+            if (renderer.hasNewGameFrame() || desktopTick) surface.requestRender()
+            Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
 
     /**
      * While Linux installs or a program is still starting (its window can take a
@@ -50,7 +65,9 @@ class DisplayActivity : Activity() {
         surface = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
             setRenderer(renderer)
-            renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+            // Draw only when there is something new (see vsyncDriver): redrawing the
+            // upscaled screen at the panel's 144 Hz for a 30 fps game only made heat.
+            renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
         }
         val mouse = TouchMouse({ LinuxSession.input }, ::toScreen)
         surface.setOnTouchListener { _, event ->
@@ -81,16 +98,21 @@ class DisplayActivity : Activity() {
                 Gravity.TOP or Gravity.END))
         })
         hideSystemBars()
+        // 30 fps games pace evenly at 60 Hz (each frame shown for two refreshes);
+        // at 144 Hz frames alternate between 4 and 5 refreshes and look jerky.
+        window.attributes = window.attributes.apply { preferredRefreshRate = PREFERRED_REFRESH_HZ }
     }
 
     override fun onResume() {
         super.onResume()
         surface.onResume()
         status.post(statusUpdater)
+        Choreographer.getInstance().postFrameCallback(vsyncDriver)
     }
 
     override fun onPause() {
         status.removeCallbacks(statusUpdater)
+        Choreographer.getInstance().removeFrameCallback(vsyncDriver)
         surface.onPause()
         super.onPause()
     }
@@ -118,5 +140,7 @@ class DisplayActivity : Activity() {
         const val STATUS_LINES = 6
         const val STATUS_REFRESH_MS = 500L
         const val STARTING_MS = 45_000L
+        const val DESKTOP_VSYNC_DIVIDER = 2L
+        const val PREFERRED_REFRESH_HZ = 60f
     }
 }

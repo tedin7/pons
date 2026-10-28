@@ -54,6 +54,9 @@ class PresentBuffer(private val file: File) {
         return null
     }
 
+    /** Number of frames published so far (0 when no game presents); cheap, no copy. */
+    fun sequence(): Long = mapping()?.getLong(OFF_SEQUENCE) ?: 0L
+
     /** Lets the writer reuse the buffer handed out by [acquire]. */
     fun release() {
         map?.let {
