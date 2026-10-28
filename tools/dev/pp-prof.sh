@@ -60,7 +60,7 @@ done'
 start=$(date +%s)
 $S shell "$SAMPLER" > "$LOCAL/samples.tsv" 2>/dev/null &
 SAMP=$!
-PP_PROOT_ENV="PROOT_SYSCALL_STATS=$D/cache/proot-tmp/pons-prof/$LABEL/proot.txt" PP_SERIAL="$PP_SERIAL" \
+PP_PROOT_ENV="${PP_PROOT_ENV:-} PROOT_SYSCALL_STATS=$D/cache/proot-tmp/pons-prof/$LABEL/proot.txt" PP_SERIAL="$PP_SERIAL" \
     "$DIR/pp-run.sh" "mkdir -p /tmp/pons-prof/$LABEL && pons-prof /tmp/pons-prof/$LABEL $CMD" > "$LOCAL/run.log" 2>&1
 wait $SAMP 2>/dev/null
 log "done in $(( $(date +%s) - start )) s, collecting"

@@ -60,14 +60,14 @@ object ProotCommand {
             // without proot stops); programs opt in by preloading it.
             "PONS_FASTPATH_ROOT=${paths.rootfs.path}",
             "PONS_FASTPATH_BINDS=/tmp=${paths.tmp.path}:/dev/shm=${paths.shm.path}",
-            // proot stops every brk (heap growth): grow the heap 64 MB at a time.
-            // Measured on a simulated game load: 1101 -> 44 stops, read phase 6x faster.
-            "GLIBC_TUNABLES=glibc.malloc.top_pad=67108864",
         ) + GRAPHICS_ENV + listOf("/bin/sh", "-c", script)
 
         return ProcessBuilder(command).redirectErrorStream(true).apply {
             environment()["PROOT_LOADER"] = "${paths.libDir}/libproot-loader.so"
             environment()["PROOT_TMP_DIR"] = paths.tmp.path
+            // Leave brk(2) to the kernel (tools/proot/0004): proot's emulated heap
+            // corrupted malloc after heap trims, and cost a ptrace stop per brk.
+            environment()["PROOT_NO_HEAP"] = "1"
             environment()["LD_LIBRARY_PATH"] = paths.libDir
             // Our proot patch hands x86/x86_64 programs to Box64 (no binfmt without root).
             environment()["PROOT_X86_RUNNER"] = X86_RUNNER

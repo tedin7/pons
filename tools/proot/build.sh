@@ -15,6 +15,7 @@ git clone -q --depth 1 --branch "$TAG" https://github.com/termux/proot.git "$SRC
 patch -d "$SRC" -p1 < "$HERE/0001-x86-runner.patch"
 patch -d "$SRC" -p1 < "$HERE/0002-syscall-stats.patch"
 patch -d "$SRC" -p1 < "$HERE/0003-fastpath-marker.patch"
+patch -d "$SRC" -p1 < "$HERE/0004-no-heap-emulation.patch"
 
 # talloc headers come from the Termux package; link against our renamed copy.
 mkdir -p "$SRC/deps/lib"

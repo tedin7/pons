@@ -1,0 +1,93 @@
+diff -ru a/src/syscall/heap.c b/src/syscall/heap.c
+--- a/src/syscall/heap.c	2026-10-28 20:20:37.577054737 +0100
++++ b/src/syscall/heap.c	2026-10-28 23:27:03.901428794 +0100
+@@ -23,7 +23,9 @@
+ #include <sys/mman.h>	/* PROT_*, MAP_*, */
+ #include <assert.h>	/* assert(3),  */
+ #include <string.h>     /* strerror(3), */
+-#include <unistd.h>     /* sysconf(3), */
++#include <unistd.h>
++#include <stdbool.h>
++#include <stdlib.h>     /* getenv(3), */     /* sysconf(3), */
+ #include <sys/param.h>  /* MIN(), MAX(), */
+ 
+ #include "tracee/tracee.h"
+@@ -51,13 +53,26 @@
+  * can be reproduced when using a Ubuntu 12.04 x86_64 rootfs on RHEL 5
+  * x86_64.
+  */
++/* Pons: PROOT_NO_HEAP leaves brk(2) to the kernel.  The emulated heap resizes an
++ * mmap()ed region in place with mremap(2); when glibc trims it and something gets
++ * mapped right behind it, the in-place growth that follows diverges from what a
++ * real brk(2) does, and malloc ends up reporting corruption.  It also costs a
++ * ptrace stop per brk(2).  */
++bool heap_emulation_disabled(void)
++{
++	static int disabled = -1;
++	if (disabled < 0)
++		disabled = getenv("PROOT_NO_HEAP") != NULL;
++	return disabled;
++}
++
+ void translate_brk_enter(Tracee *tracee)
+ {
+ 	word_t new_brk_address;
+ 	size_t old_heap_size;
+ 	size_t new_heap_size;
+ 
+-	if (tracee->heap->disabled)
++	if (tracee->heap->disabled || heap_emulation_disabled())
+ 		return;
+ 
+ 	if (heap_offset == 0) {
+@@ -153,7 +168,7 @@
+ 	word_t sysnum;
+ 	int tracee_errno;
+ 
+-	if (tracee->heap->disabled)
++	if (tracee->heap->disabled || heap_emulation_disabled())
+ 		return;
+ 
+ 	assert(heap_offset > 0);
+diff -ru a/src/syscall/heap.h b/src/syscall/heap.h
+--- a/src/syscall/heap.h	2026-10-28 20:20:37.577054737 +0100
++++ b/src/syscall/heap.h	2026-10-28 23:27:03.901428794 +0100
+@@ -27,5 +27,6 @@
+ 
+ extern void translate_brk_enter(Tracee *tracee);
+ extern void translate_brk_exit(Tracee *tracee);
++extern bool heap_emulation_disabled(void);
+ 
+ #endif /* HEAP_H */
+diff -ru a/src/syscall/seccomp.c b/src/syscall/seccomp.c
+--- a/src/syscall/seccomp.c	2026-10-28 23:27:03.870426268 +0100
++++ b/src/syscall/seccomp.c	2026-10-28 23:27:03.902428876 +0100
+@@ -43,6 +43,7 @@
+ #include <assert.h>        /* assert(3), */
+ 
+ #include "syscall/seccomp.h"
++#include "syscall/heap.h"
+ #include "tracee/tracee.h"
+ #include "syscall/syscall.h"
+ #include "syscall/sysnum.h"
+@@ -296,7 +297,8 @@
+ 		for (j = 0; j < seccomp_archs[i].nb_abis; j++) {
+ 			for (k = 0; sysnums[k].value != PR_void; k++) {
+ 				syscall = detranslate_sysnum(seccomp_archs[i].abis[j], sysnums[k].value);
+-				if (syscall != SYSCALL_AVOIDER)
++				if (syscall != SYSCALL_AVOIDER
++				    && !(sysnums[k].value == PR_brk && heap_emulation_disabled()))
+ 					nb_traced_syscalls++;
+ 			}
+ 		}
+@@ -308,6 +310,10 @@
+ 
+ 		for (j = 0; j < seccomp_archs[i].nb_abis; j++) {
+ 			for (k = 0; sysnums[k].value != PR_void; k++) {
++				/* Pons: without heap emulation brk(2) needs no stop.  */
++				if (sysnums[k].value == PR_brk && heap_emulation_disabled())
++					continue;
++
+ 				/* Get the architecture specific syscall number.  */
+ 				syscall = detranslate_sysnum(seccomp_archs[i].abis[j], sysnums[k].value);
+ 				if (syscall == SYSCALL_AVOIDER)
