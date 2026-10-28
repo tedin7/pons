@@ -9,8 +9,15 @@ import java.nio.ByteOrder
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
-/** Draws the Xvfb screen, letterboxed, uploading it as a texture every frame. */
-class FramebufferRenderer(private val source: File) : GLSurfaceView.Renderer {
+/**
+ * Draws the Xvfb screen, letterboxed, uploading it as a texture every frame.
+ * Linux usually renders below panel resolution; the shader upscales it with a
+ * Catmull-Rom filter plus a light unsharp mask so text and map borders stay crisp.
+ */
+class FramebufferRenderer(
+    private val source: File,
+    private val sharpness: Float,
+) : GLSurfaceView.Renderer {
 
     @Volatile var framebuffer: XvfbFramebuffer? = null
         private set
@@ -70,6 +77,9 @@ class FramebufferRenderer(private val source: File) : GLSurfaceView.Renderer {
 
         applyLetterbox(fb.width, fb.height)
         GLES20.glUseProgram(program)
+        GLES20.glUniform2f(GLES20.glGetUniformLocation(program, "uTexSize"),
+            fb.width.toFloat(), fb.height.toFloat())
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(program, "uSharp"), sharpness)
         val position = GLES20.glGetAttribLocation(program, "aPos")
         quad.position(0)
         GLES20.glVertexAttribPointer(position, 4, GLES20.GL_FLOAT, false, 16, quad)
@@ -129,11 +139,47 @@ class FramebufferRenderer(private val source: File) : GLSurfaceView.Renderer {
             void main() { vUv = aPos.zw; gl_Position = vec4(aPos.xy, 0.0, 1.0); }
         """
         // Xvfb stores BGRX; the texture is uploaded as RGBA, so swap red and blue here.
+        // Catmull-Rom in 9 bilinear taps, then unsharp masking against a 4-tap blur.
         private const val FRAGMENT_SHADER = """
-            precision mediump float;
+            precision highp float;
             varying vec2 vUv;
             uniform sampler2D uTex;
-            void main() { gl_FragColor = vec4(texture2D(uTex, vUv).bgr, 1.0); }
+            uniform vec2 uTexSize;
+            uniform float uSharp;
+
+            vec3 fetch(vec2 uv) { return texture2D(uTex, uv).bgr; }
+
+            vec3 catmullRom(vec2 uv) {
+                vec2 pos = uv * uTexSize;
+                vec2 t1 = floor(pos - 0.5) + 0.5;
+                vec2 f = pos - t1;
+                vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+                vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+                vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+                vec2 w3 = f * f * (-0.5 + 0.5 * f);
+                vec2 w12 = w1 + w2;
+                vec2 p0 = (t1 - 1.0) / uTexSize;
+                vec2 p3 = (t1 + 2.0) / uTexSize;
+                vec2 p12 = (t1 + w2 / w12) / uTexSize;
+                vec3 c = fetch(vec2(p0.x, p0.y)) * w0.x * w0.y
+                       + fetch(vec2(p12.x, p0.y)) * w12.x * w0.y
+                       + fetch(vec2(p3.x, p0.y)) * w3.x * w0.y
+                       + fetch(vec2(p0.x, p12.y)) * w0.x * w12.y
+                       + fetch(vec2(p12.x, p12.y)) * w12.x * w12.y
+                       + fetch(vec2(p3.x, p12.y)) * w3.x * w12.y
+                       + fetch(vec2(p0.x, p3.y)) * w0.x * w3.y
+                       + fetch(vec2(p12.x, p3.y)) * w12.x * w3.y
+                       + fetch(vec2(p3.x, p3.y)) * w3.x * w3.y;
+                return c;
+            }
+
+            void main() {
+                vec3 c = catmullRom(vUv);
+                vec2 px = 1.0 / uTexSize;
+                vec3 blur = (fetch(vUv + vec2(px.x, 0.0)) + fetch(vUv - vec2(px.x, 0.0))
+                           + fetch(vUv + vec2(0.0, px.y)) + fetch(vUv - vec2(0.0, px.y))) * 0.25;
+                gl_FragColor = vec4(clamp(c + uSharp * (c - blur), 0.0, 1.0), 1.0);
+            }
         """
     }
 }

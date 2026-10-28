@@ -27,4 +27,6 @@ fi
 
 cd "$STEAM/steamrtarm64"
 export STEAM_RUNTIME=1
+# FPS overlay in Vulkan games (works for x86 games too: Box64 forwards Vulkan to arm64).
+export MANGOHUD="${PINGUPLAY_FPS:-1}"
 exec ./steam -no-cef-sandbox -noverifyfiles "$@"

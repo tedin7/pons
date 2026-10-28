@@ -31,6 +31,7 @@ class ComponentInstaller(private val context: Context, private val paths: LinuxP
         val destination = if (component.intoRootfs) paths.rootfs else paths.rootfs.also {
             if (it.exists()) it.deleteRecursively()
         }
+        component.replaces?.let { File(paths.rootfs, it).deleteRecursively() }
         openSource(component, onStatus).use { input ->
             TarXzExtractor.extract(input, destination) { n -> onStatus("${component.id}: $n file") }
         }

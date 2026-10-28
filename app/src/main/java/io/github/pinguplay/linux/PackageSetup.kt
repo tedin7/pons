@@ -31,12 +31,12 @@ class PackageSetup(context: Context, private val paths: LinuxPaths) {
     }
 
     companion object {
-        const val VERSION = "1"
+        const val VERSION = "2"
         val PACKAGES = listOf(
             // Screen, GPU and test tools.
             "xvfb", "xz-utils", "ca-certificates", "curl", "unzip", "libgl1", "libegl1",
             "libglx-mesa0", "libvulkan1", "vulkan-tools", "mesa-utils", "x11-utils",
-            "fonts-dejavu-core",
+            "fonts-dejavu-core", "vkmark", "glmark2-x11", "mangohud",
             // Libraries the arm64 Steam client and its web view link against.
             "libxtst6", "libxrandr2", "libxcursor1", "libxi6", "libxinerama1", "libxcomposite1",
             "libxdamage1", "libxrender1", "libxfixes3", "libxss1", "libxkbcommon0",

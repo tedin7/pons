@@ -1,0 +1,9 @@
+# Managed by Pinguplay: per-game Box64 tuning, read after /etc/box64.box64rc.
+# Values are starting points chosen for the Snapdragon 8 Elite; measure before changing.
+
+[ck3]
+# Crusader Kings III (native Linux, Vulkan). Long-lived game code: bigger blocks pay off.
+BOX64_DYNAREC_BIGBLOCK=3
+BOX64_DYNAREC_CALLRET=2
+# Many worker threads spin on locks: yield instead of burning the core.
+BOX64_DYNAREC_PAUSE=1

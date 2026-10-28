@@ -4,7 +4,8 @@ package io.github.pinguplay.linux
  * A piece of the Linux environment shipped as a .tar.xz.
  * [assetName] is used when bundled in the APK, otherwise [url] is downloaded and
  * checked against [sha256]. [intoRootfs] unpacks over the Debian tree instead of
- * creating it.
+ * creating it. [replaces] is a rootfs path wiped before an upgrade, so files dropped
+ * by a new version do not linger.
  */
 data class Component(
     val id: String,
@@ -14,6 +15,7 @@ data class Component(
     val url: String? = null,
     val assetName: String? = null,
     val intoRootfs: Boolean = true,
+    val replaces: String? = null,
 )
 
 object Components {
@@ -30,10 +32,12 @@ object Components {
 
     val MESA = Component(
         id = "mesa",
-        version = "26.2.5",
-        sizeBytes = 7_055_488,
-        sha256 = "dec0fc2155bc7ef38d28ca9d7397d7fc122a7e15f496754204f04af4443007cf",
-        url = "${BASE}mesa-26.2.5-pinguplay.tar.xz",
+        // Mesa main (27.0-devel): Adreno 830 entries, UBWC 5, Pinguplay direct present.
+        version = "main-f01e9b0-pp1",
+        sizeBytes = 7_130_220,
+        sha256 = "5b9ad966351dafbe1b761fef87a8f5740197a3bff1aa2273b4bee41ea2f4b8d2",
+        url = "${BASE}mesa-main-f01e9b0-pp1-pinguplay.tar.xz",
+        replaces = "opt/pinguplay/mesa",
     )
 
     val BOX64 = Component(
@@ -46,10 +50,10 @@ object Components {
 
     val TOOLS = Component(
         id = "tools",
-        version = "2",
-        sizeBytes = 3_084,
-        sha256 = "d226793a46e3d6b030e0280c8ec9128291832548af42b8e0440990a1debaa751",
-        url = "${BASE}pinguplay-tools-2.tar.xz",
+        version = "3",
+        sizeBytes = 3_684,
+        sha256 = "7a58df198a69fa9ea6fa23d103a6d3ee2385071783c99898be27d9e2444bb7c8",
+        url = "${BASE}pinguplay-tools-3.tar.xz",
     )
 
     /** Order matters: the rootfs must exist before anything unpacks into it. */

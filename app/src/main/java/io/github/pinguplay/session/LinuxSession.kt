@@ -17,8 +17,6 @@ import java.util.concurrent.CopyOnWriteArrayList
  */
 object LinuxSession {
 
-    const val SCREEN_WIDTH = 1920
-    const val SCREEN_HEIGHT = 1360
     private const val TAG = "Pinguplay"
     private const val MAX_LOG_LINES = 400
 
@@ -44,7 +42,7 @@ object LinuxSession {
         val paths = LinuxPaths(context)
         try {
             installMissing(context, paths)
-            startScreen(paths)
+            startScreen(paths, DisplaySettings(context).resolution)
             startInput(paths)
             running = true
             emit("▶ $program")
@@ -81,12 +79,12 @@ object LinuxSession {
         }
     }
 
-    private fun startScreen(paths: LinuxPaths) {
+    private fun startScreen(paths: LinuxPaths, resolution: Resolution) {
         File(paths.tmp, ".X11-unix/X0").delete()
         File(paths.tmp, ".X0-lock").delete()
         paths.framebuffer.delete()
         launch(paths,
-            "Xvfb ${ProotCommand.DISPLAY} -screen 0 ${SCREEN_WIDTH}x${SCREEN_HEIGHT}x24 " +
+            "Xvfb ${ProotCommand.DISPLAY} -screen 0 ${resolution.width}x${resolution.height}x24 " +
                 "-fbdir /tmp -nolisten tcp -ac +extension GLX", "xvfb")
         val deadline = System.currentTimeMillis() + 15_000
         while (!File(paths.tmp, ".X11-unix/X0").exists()) {

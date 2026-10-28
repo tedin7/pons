@@ -10,6 +10,7 @@ docker run --rm -v "$HERE":/src:ro -v "$OUT":/out pinguplay-tools sh -euc "
   aarch64-linux-gnu-gcc -O2 -Wall -Wextra -o /stage/opt/pinguplay/bin/pinguplay-input /src/pinguplay-input.c -lX11 -lXtst
   aarch64-linux-gnu-strip /stage/opt/pinguplay/bin/pinguplay-input
   install -m 755 /src/bin/* /stage/opt/pinguplay/bin/
-  tar -C /stage -cJf /out/pinguplay-tools-$VERSION.tar.xz opt
+  install -D -m 644 /src/home/.box64rc /stage/root/.box64rc
+  tar -C /stage -cJf /out/pinguplay-tools-$VERSION.tar.xz opt root
 "
 ls -la "$OUT/pinguplay-tools-$VERSION.tar.xz"

@@ -17,6 +17,10 @@ object ProotCommand {
         "__EGL_VENDOR_LIBRARY_FILENAMES=/opt/pinguplay/mesa/share/glvnd/egl_vendor.d/50_mesa.json",
         "MESA_LOADER_DRIVER_OVERRIDE=zink",
         "TU_DEBUG=noconform",
+        // Xvfb has no DRI3, so Vulkan presents through the CPU path; our Mesa patch
+        // then writes frames straight into the screen file the app shows.
+        "MESA_VK_WSI_DEBUG=sw",
+        "PINGUPLAY_XVFB_FB=/tmp/Xvfb_screen0",
         "BOX64_LOG=0",
     )
 

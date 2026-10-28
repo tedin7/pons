@@ -10,6 +10,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import io.github.pinguplay.display.DisplayActivity
+import io.github.pinguplay.session.DisplaySettings
 import io.github.pinguplay.session.LinuxSession
 import io.github.pinguplay.session.LinuxSessionService
 
@@ -35,6 +36,11 @@ class MainActivity : Activity() {
             addView(Button(context).apply {
                 text = "Ferma"
                 setOnClickListener { LinuxSessionService.stop(context) }
+            })
+            addView(Button(context).apply {
+                val settings = DisplaySettings(context)
+                text = settings.resolution.label
+                setOnClickListener { text = settings.nextResolution().label }
             })
             addView(Button(context).apply {
                 text = "Schermo"
@@ -82,7 +88,7 @@ class MainActivity : Activity() {
     companion object {
         private val PROGRAMS = listOf(
             "Cubo Vulkan" to "vkcube --wsi xcb",
-            "Ingranaggi OpenGL" to "glxinfo -B; glxgears -info",
+            "Prova velocità" to "pinguplay-bench",
             "Steam" to "pinguplay-steam",
         )
     }

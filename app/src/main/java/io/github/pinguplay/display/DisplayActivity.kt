@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import io.github.pinguplay.linux.LinuxPaths
+import io.github.pinguplay.session.DisplaySettings
 import io.github.pinguplay.session.LinuxSession
 
 /** Full-screen view of the Linux desktop, with touch acting as a mouse. */
@@ -16,7 +17,7 @@ class DisplayActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        renderer = FramebufferRenderer(LinuxPaths(this).framebuffer)
+        renderer = FramebufferRenderer(LinuxPaths(this).framebuffer, DisplaySettings(this).sharpness)
         surface = GLSurfaceView(this).apply {
             setEGLContextClientVersion(2)
             setRenderer(renderer)

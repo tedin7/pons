@@ -10,4 +10,5 @@ RUN dpkg --add-architecture arm64 && apt-get update && apt-get install -y --no-i
       zlib1g-dev:arm64 libexpat1-dev:arm64 libzstd-dev:arm64 \
     && rm -rf /var/lib/apt/lists/*
 COPY cross-aarch64.ini build.sh /build/
+COPY patches /build/patches
 ENTRYPOINT ["/build/build.sh"]
