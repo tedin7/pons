@@ -2,6 +2,7 @@ package io.github.pinguplay.display
 
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
+import android.system.Os
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -22,6 +23,8 @@ class FramebufferRenderer(private val source: File) : GLSurfaceView.Renderer {
     private var texture = 0
     private var textureSize = 0 to 0
     private var surfaceSize = 0 to 0
+    private var sourceInode = -1L
+    private var frames = 0
 
     private val quad: ByteBuffer = ByteBuffer.allocateDirect(QUAD.size * 4)
         .order(ByteOrder.nativeOrder())
@@ -47,7 +50,11 @@ class FramebufferRenderer(private val source: File) : GLSurfaceView.Renderer {
     override fun onDrawFrame(gl: GL10?) {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
-        val fb = framebuffer ?: XvfbFramebuffer.open(source)?.also { framebuffer = it } ?: return
+        if (frames++ % REOPEN_CHECK_FRAMES == 0) dropIfReplaced()
+        val fb = framebuffer ?: XvfbFramebuffer.open(source)?.also {
+            framebuffer = it
+            sourceInode = inodeOf(source)
+        } ?: return
         if (fb.bytesPerLine != fb.width * 4) return
 
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texture)
@@ -69,6 +76,13 @@ class FramebufferRenderer(private val source: File) : GLSurfaceView.Renderer {
         GLES20.glEnableVertexAttribArray(position)
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
     }
+
+    /** Xvfb recreates the file when Linux restarts; our old mapping would freeze. */
+    private fun dropIfReplaced() {
+        if (framebuffer != null && inodeOf(source) != sourceInode) framebuffer = null
+    }
+
+    private fun inodeOf(file: File): Long = runCatching { Os.stat(file.path).st_ino }.getOrDefault(-2L)
 
     private fun applyLetterbox(fbWidth: Int, fbHeight: Int) {
         val (sw, sh) = surfaceSize
@@ -100,6 +114,8 @@ class FramebufferRenderer(private val source: File) : GLSurfaceView.Renderer {
     }
 
     companion object {
+        private const val REOPEN_CHECK_FRAMES = 30
+
         /** x, y, u, v for a full-viewport strip; v is flipped because X rows go top-down. */
         private val QUAD = floatArrayOf(
             -1f, -1f, 0f, 1f,

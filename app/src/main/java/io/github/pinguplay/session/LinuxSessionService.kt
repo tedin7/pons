@@ -8,12 +8,18 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Keeps Linux alive and online while a game runs. Android cuts network and may kill
  * background apps, so the session runs inside a foreground service.
  */
 class LinuxSessionService : Service() {
+
+    /** Sessions run one at a time; a new request first stops the running one. */
+    private val sessions = Executors.newSingleThreadExecutor { Thread(it, "pinguplay-session") }
+    private val pending = AtomicInteger()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -26,15 +32,18 @@ class LinuxSessionService : Service() {
         val program = intent?.getStringExtra(EXTRA_PROGRAM) ?: return START_NOT_STICKY
         startForeground(NOTIFICATION_ID, notification(program),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        Thread({
+        LinuxSession.stop()
+        pending.incrementAndGet()
+        sessions.execute {
             LinuxSession.start(applicationContext, program)
-            stopSelf()
-        }, "pinguplay-session").start()
+            if (pending.decrementAndGet() == 0) stopSelf()
+        }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         LinuxSession.stop()
+        sessions.shutdownNow()
         super.onDestroy()
     }
 

@@ -1,0 +1,60 @@
+# Pinguplay
+
+Play your Steam library's **Linux** games on an Android device, using the device's real GPU.
+No root, no streaming.
+
+Pinguplay runs a full Debian (arm64) inside the app, gives it an open-source Vulkan/OpenGL
+driver for Adreno GPUs, and runs PC (x86) game binaries through Box64. Games are installed
+and launched by Valve's native arm64 Steam client, so your library, saves and DRM work the
+way they do on a Linux PC.
+
+> Status: early prototype. Tested on a OnePlus Pad 3 (Snapdragon 8 Elite, Adreno 830).
+
+## How it works
+
+```
+Android app (Kotlin)
+ ├─ LinuxSessionService   foreground service: keeps Linux running and online
+ ├─ DisplayActivity       shows the Linux screen, touch acts as a mouse
+ └─ proot (patched)       runs Debian without root
+     └─ Debian trixie arm64
+         ├─ Xvfb                  the Linux screen (framebuffer shared with the app)
+         ├─ pinguplay-input       turns touch into X11 mouse/keys (XTEST)
+         ├─ Mesa 26 Turnip + Zink Vulkan and OpenGL on Adreno (Android KGSL backend)
+         ├─ Box64                 runs x86/x86_64 Linux programs on arm64
+         └─ Steam (arm64 beta)    downloads and launches your games
+```
+
+- **x86 games without binfmt.** Linux normally needs root to hand foreign binaries to a
+  translator. Our proot patch (`tools/proot/0001-x86-runner.patch`) treats an x86 ELF like
+  a script whose interpreter is Box64, so Steam can start games as usual.
+- **No executables in app storage.** Android only lets apps execute files from their
+  native library folder, so proot ships as `libproot.so`; everything else runs inside it.
+- **Small APK.** The Linux parts are downloaded on first start and checked with SHA-256
+  (`linux/Component.kt`). The first start also installs a few Debian packages with apt.
+  Plan for about 150 MB, plus about 500 MB for Steam. Use Wi-Fi.
+
+## Building
+
+Everything builds on an x86_64 Linux machine with Docker, JDK 17 and the Android SDK.
+
+| Part | Script | Output |
+| --- | --- | --- |
+| Mesa (Turnip + Zink) | `tools/mesa/build.sh <version> <sha256>` (in its Docker image) | `mesa-<v>-pinguplay.tar.xz` |
+| Box64 | `tools/box64/build.sh <tag>` (in its Docker image) | `box64-<tag>-pinguplay.tar.xz` |
+| proot (patched) | `tools/proot/build.sh` (needs the NDK) | `libproot.so`, `libproot-loader.so` |
+| helpers | `tools/input/build.sh <version>` | `pinguplay-tools-<v>.tar.xz` |
+| app | `gradle assembleDebug` | APK |
+
+Publish the `.tar.xz` files where `COMPONENTS_BASE_URL` (in `app/build.gradle.kts`) points,
+and update the sizes and checksums in `linux/Component.kt`.
+
+`tools/dev/pp-run.sh` runs a command inside the app's Debian over adb (debug builds only).
+
+## License
+
+Pinguplay is licensed under the GNU GPL v3 (see `LICENSE`). It bundles or downloads
+third-party software under its own licenses; see `NOTICE.md`.
+
+Steam is a trademark of Valve Corporation. Pinguplay is not affiliated with Valve; it
+downloads Valve's client from Valve's servers on the user's device and never redistributes it.

@@ -38,10 +38,9 @@ object LinuxSession {
 
     fun removeListener(listener: (String) -> Unit) = listeners.remove(listener)
 
-    /** Blocking: call from a background thread. */
-    @Synchronized
+    /** Blocking until the program exits: call from a background thread. */
     fun start(context: Context, program: String) {
-        if (running) stop()
+        stop()
         val paths = LinuxPaths(context)
         try {
             installMissing(context, paths)
@@ -60,7 +59,7 @@ object LinuxSession {
         }
     }
 
-    @Synchronized
+    /** Safe from any thread; makes a blocked [start] return. */
     fun stop() {
         input?.close()
         input = null
