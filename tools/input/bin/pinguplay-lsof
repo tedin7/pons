@@ -19,6 +19,18 @@ for arg in "$@"; do
 done
 [ -n "$query" ] || exit 1
 
+# Exact answer when libpinguplay-robust.so saw the connection being made.
+port=${query##*:}
+entry=/tmp/.pinguplay-sockets/$port
+if [ -r "$entry" ]; then
+    read -r pid ppid lport rport < "$entry"
+    if [ -d "/proc/$pid" ]; then
+        printf 'p%s\nR%s\nu%s\nf0\nn127.0.0.1:%s->127.0.0.1:%s\n' "$pid" "$ppid" "$(id -u)" "$lport" "$rport" |
+            tee -a "${PINGUPLAY_LSOF_LOG:-/dev/null}"
+        exit 0
+    fi
+fi
+
 # Chromium opens sockets from its network service, a child of the web helper's
 # browser process; Steam checks that parent, so report the network service and
 # fall back to the browser process if there is none.
