@@ -30,6 +30,9 @@ object LinuxSession {
     @Volatile var running = false
         private set
 
+    /** Set by [stop]: errors after it are just the program being torn down. */
+    @Volatile private var stopped = false
+
     fun log(): List<String> = synchronized(logLines) { logLines.toList() }
 
     fun addListener(listener: (String) -> Unit) = listeners.add(listener)
@@ -39,6 +42,7 @@ object LinuxSession {
     /** Blocking until the program exits: call from a background thread. */
     fun start(context: Context, program: String) {
         stop()
+        stopped = false
         val paths = LinuxPaths(context)
         try {
             installMissing(context, paths, program)
@@ -51,7 +55,7 @@ object LinuxSession {
             emit("■ uscito con codice $code")
         } catch (e: Exception) {
             Log.e(TAG, "Session failed", e)
-            emit("ERRORE: ${e.message}")
+            if (!stopped) emit("ERRORE: ${e.message ?: e.javaClass.simpleName}")
         } finally {
             stop()
         }
@@ -59,10 +63,12 @@ object LinuxSession {
 
     /** Safe from any thread; makes a blocked [start] return. */
     fun stop() {
+        stopped = true
         input?.close()
         input = null
         processes.forEach { it.destroy() }
         processes.clear()
+        ProcessTree.killDescendants()
         running = false
     }
 
