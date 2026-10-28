@@ -75,3 +75,10 @@ downloads Valve's client from Valve's servers on the user's device and never red
 Running x86 games outside Steam can hit gaps in Box64's native wrappers; for
 Neverball we used Debian's x86 `libjpeg62-turbo` and `libpng16` (with
 `BOX64_EMULATED_LIBS=libpng16.so.16`, the wrapper lacks `png_set_longjmp_fn`).
+
+### Crusader Kings III (first run, 2026-10-28)
+
+The Linux x86_64 build runs through Box64 inside Pinguplay, signed in through the arm64
+Steam client: main menu at 31 fps at 1600×1132 (Vulkan on Turnip, Adreno 830).
+During loading and at the menu the tablet's skin reached 54 °C (Android thermal
+status 2 of 6, throttling starts at 60 °C), so a 30 fps cap is recommended.
