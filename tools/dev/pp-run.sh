@@ -23,6 +23,7 @@ echo $SCRIPT_B64 | base64 -d > \$D/cache/proot-tmp/$NAME.sh
 $LAUNCH $LIB/libproot.so --kill-on-exit --link2symlink --sysvipc -0 -r \$D/files/rootfs -b /dev -b /proc -b /sys \
   -b \$D/cache/proot-tmp:/tmp -b \$D/cache/shm:/dev/shm -w /root /usr/bin/env -i HOME=/root TERM=xterm LANG=C.UTF-8 \
   DISPLAY=:0 XDG_RUNTIME_DIR=/tmp \
+  PINGUPLAY_FASTPATH_ROOT=\$D/files/rootfs PINGUPLAY_FASTPATH_BINDS=/tmp=\$D/cache/proot-tmp:/dev/shm=\$D/cache/shm \
   VK_ICD_FILENAMES=/opt/pinguplay/mesa/share/vulkan/icd.d/freedreno_icd.aarch64.json \
   LD_LIBRARY_PATH=/opt/pinguplay/mesa/lib LIBGL_DRIVERS_PATH=/opt/pinguplay/mesa/lib/dri \
   __GLX_VENDOR_LIBRARY_NAME=mesa MESA_LOADER_DRIVER_OVERRIDE=zink LIBGL_KOPPER_DRI2=1 TU_DEBUG=noconform \

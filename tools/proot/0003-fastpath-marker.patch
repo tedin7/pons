@@ -1,0 +1,39 @@
+diff -ru a/src/syscall/seccomp.c b/src/syscall/seccomp.c
+--- a/src/syscall/seccomp.c	2026-10-28 20:20:37.577054737 +0100
++++ b/src/syscall/seccomp.c	2026-10-28 20:34:38.539406978 +0100
+@@ -36,6 +36,9 @@
+ #include <errno.h>         /* E*, */
+ #include <string.h>        /* memcpy(3), */
+ #include <stddef.h>        /* offsetof(3), */
++
++/* "PINGUPLY": see set_seccomp_filters().  Shared with tools/compat/pinguplay-fastpath.c.  */
++#define PROOT_FASTPATH_MAGIC 0x594c50554755494eULL
+ #include <stdint.h>        /* uint*_t, UINT*_MAX, */
+ #include <assert.h>        /* assert(3), */
+ 
+@@ -264,6 +267,25 @@
+ 	if (status < 0)
+ 		goto end;
+ 
++	/* Pinguplay fast path: a program that already rewrote the paths itself marks
++	 * the call with PROOT_FASTPATH_MAGIC in the 6th argument, which none of the
++	 * path syscalls use; such calls skip the ptrace stop entirely.  The marker is
++	 * 64-bit, so an accidental match is not a practical concern.  */
++	{
++		const size_t lo = offsetof(struct seccomp_data, args[5]);
++		const size_t hi = lo + sizeof(uint32_t);
++		struct sock_filter fast[] = {
++			BPF_STMT(BPF_LD + BPF_W + BPF_ABS, lo),
++			BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, (uint32_t) PROOT_FASTPATH_MAGIC, 0, 3),
++			BPF_STMT(BPF_LD + BPF_W + BPF_ABS, hi),
++			BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K, (uint32_t) (PROOT_FASTPATH_MAGIC >> 32), 0, 1),
++			BPF_STMT(BPF_RET + BPF_K, SECCOMP_RET_ALLOW),
++		};
++		status = add_statements(&program, sizeof(fast) / sizeof(fast[0]), fast);
++		if (status < 0)
++			goto end;
++	}
++
+ 	/* For each handled architectures */
+ 	for (i = 0; i < nb_archs; i++) {
+ 		word_t syscall;

@@ -56,10 +56,10 @@ object Components {
 
     val TOOLS = Component(
         id = "tools",
-        version = "18",
-        sizeBytes = 27_940,
-        sha256 = "415146766fc9af8937a47e0486d0253e4d41eebf179769b5ce36d5885ede4dcc",
-        url = "${BASE}pinguplay-tools-18.tar.xz",
+        version = "22",
+        sizeBytes = 249_392,
+        sha256 = "c7e15f5fc1e7b13d3b92fe01613b77eeb1feb0761371a2d591dabb14722137eb",
+        url = "${BASE}pinguplay-tools-22.tar.xz",
     )
 
     /** Order matters: the rootfs must exist before anything unpacks into it. */

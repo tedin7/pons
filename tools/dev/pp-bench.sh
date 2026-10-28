@@ -1,33 +1,65 @@
 #!/bin/sh
-# pp-bench.sh <label> [seconds] [program]
+# pp-bench.sh <game>:<scene> [seconds] [label]     e.g. pp-bench.sh ck3:heavy 120
+# pp-bench.sh <label> [seconds] [program]           any program, settings from env
 #
 # Runs one hands-off benchmark on the tablet over adb and prints one summary line:
 #   1. stops any previous session and waits until the tablet has cooled down,
 #      so runs start from the same temperature and can be compared;
-#   2. starts the app with <program> (debug builds accept it as an intent extra);
-#   3. waits until the game presents frames steadily (loading is not measured);
+#   2. prepares the same starting point and starts the app with the program
+#      (debug builds accept it as an intent extra);
+#   3. waits for the game's own "ready" log line, then steady frames, then settles;
 #   4. samples every second ON THE TABLET (one adb stream, not one call per sample):
-#      frames, CPU/GPU/skin temperatures, Android thermal status, free memory,
-#      whether the app is still alive;
+#      frames, late frames, CPU/GPU/skin temperatures, Android thermal status, free
+#      memory, whether the app is still alive;
 #   5. stops everything and appends the summary to $PP_BENCH_RESULTS.
+# Game settings come from the profile tools/input/games/<game>.conf (the same file
+# pinguplay-game reads inside Linux); PP_BENCH_* variables override them.
 # No touch, no mouse: repeatable in a loop (see pp-bench-loop.sh).
 set -u
-LABEL="${1:?label}"
 SECONDS_RUN="${2:-90}"
-PROGRAM="${3:-pinguplay-ck3 -continuelastsave}"
+HOME_DIR="files/rootfs/root"
+case "$1" in
+    *:*)
+        GAME_ID="${1%%:*}"; SCENE="${1#*:}"
+        CONF="$(dirname "$0")/../input/games/$GAME_ID.conf"
+        [ -f "$CONF" ] || { echo "no profile $CONF" >&2; exit 2; }
+        LOG= READY= PREPARE=
+        . "$CONF"
+        eval "scene=\${SCENE_$SCENE:-}"
+        [ -n "$scene" ] || { echo "profile $GAME_ID has no scene $SCENE" >&2; exit 2; }
+        LABEL="${3:-$GAME_ID-$SCENE}"
+        PROGRAM="pinguplay-game $GAME_ID ${scene%%|*}"
+        DEF_KEYS="${scene#*|}"
+        # "~" in the profile is the Linux home; on the tablet that is $HOME_DIR.
+        DEF_LOG=$(printf '%s' "$LOG" | sed "s|^~|$HOME_DIR|")
+        DEF_READY="$READY"
+        DEF_PREPARE=$(printf '%s' "$PREPARE" | sed "s|~|$HOME_DIR|g")
+        ;;
+    *)
+        LABEL="$1"
+        PROGRAM="${3:?program}"
+        DEF_KEYS= DEF_LOG= DEF_READY= DEF_PREPARE=
+        ;;
+esac
 ADB="${ADB:-/root/.local/mercati-android-tools/sdk/platform-tools/adb -P 5037}"
 S="$ADB -s ${PP_SERIAL:?set PP_SERIAL}"
 PKG=io.github.pinguplay
 COOL_C="${PP_BENCH_COOL_C:-45}"
 READY_TIMEOUT="${PP_BENCH_READY_TIMEOUT:-600}"
 SETTLE="${PP_BENCH_SETTLE:-20}"
-GAME_LOG="${PP_BENCH_GAME_LOG:-files/rootfs/root/.local/share/Paradox Interactive/Crusader Kings III/logs/debug.log}"
-READY_LOG="${PP_BENCH_READY_LOG:-Setting idler 'In Game'|Held the main menu}"
+GAME_LOG="${PP_BENCH_GAME_LOG:-$DEF_LOG}"
+READY_LOG="${PP_BENCH_READY_LOG:-$DEF_READY}"
 # Keys sent after settling, e.g. "space 5" to unpause a strategy game at top speed;
-# "type:word" types text (CK3 observer: "grave type:observe Return grave space 5").
-KEYS="${PP_BENCH_KEYS:-}"
-CK3_USER="files/rootfs/root/.local/share/Paradox Interactive/Crusader Kings III"
-PREPARE="${PP_BENCH_PREPARE-cd '$CK3_USER' && cp 'save games/Duke_Vratislav_II_of_Bohemia_1066_09_15.ck3' last_save.ck3}"
+# "type:word" types text.
+KEYS="${PP_BENCH_KEYS:-$DEF_KEYS}"
+PREPARE="${PP_BENCH_PREPARE-$DEF_PREPARE}"
+# Variables for the program, e.g. PP_BENCH_ENV="PINGUPLAY_FASTPATH=0" for an A/B run.
+PROGRAM="${PP_BENCH_ENV:+$PP_BENCH_ENV }$PROGRAM"
+if [ "${PP_BENCH_DRY:-0}" = 1 ]; then
+    printf 'label=%s\nprogram=%s\nkeys=%s\nlog=%s\nready=%s\nprepare=%s\n' \
+        "$LABEL" "$PROGRAM" "$KEYS" "$GAME_LOG" "$READY_LOG" "$PREPARE"
+    exit 0
+fi
 RESULTS="${PP_BENCH_RESULTS:-/root/pinguplay-bench/results.tsv}"
 RAW_DIR="$(dirname "$RESULTS")/raw"
 mkdir -p "$RAW_DIR"
@@ -106,7 +138,8 @@ while :; do
         load_top=1
         $S shell "top -b -n 1 -d 2 -m 10 -o PID,%CPU,RES,NAME | cut -c1-120; P=\$(pidof ck3 | cut -d' ' -f1); [ -n \"\$P\" ] && top -H -b -n 1 -d 2 -m 12 -p \$P -o TID,%CPU,NAME" > "${RAW%.log}.loadtop" 2>/dev/null
     fi
-    if $S shell "run-as $PKG grep -q -E \"$READY_LOG\" '$GAME_LOG'" 2>/dev/null; then
+    # Without a ready line (plain programs), steady frames alone mean ready.
+    if [ -z "$READY_LOG" ] || $S shell "run-as $PKG grep -q -E \"$READY_LOG\" '$GAME_LOG'" 2>/dev/null; then
         ready=$(awk '/^S /{ if (p != "" && $2 - p >= 5) run++; else run = 0; p = $2 } END { print (run >= 3) }' "$RAW")
         [ "$ready" = 1 ] && break
     fi

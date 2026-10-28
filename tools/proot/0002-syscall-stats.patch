@@ -1,0 +1,165 @@
+diff --git a/src/syscall/syscall.c b/src/syscall/syscall.c
+--- a/src/syscall/syscall.c
++++ b/src/syscall/syscall.c
+@@ -24,6 +24,9 @@
+ #include <limits.h>      /* PATH_MAX, */
+ #include <string.h>      /* strlen(3), */
+ #include <errno.h>       /* errno(3), E* */
++#include <stdio.h>       /* fopen(3), fprintf(3), */
++#include <stdlib.h>      /* getenv(3), atexit(3), */
++#include <time.h>        /* clock_gettime(3), */
+ 
+ #include "syscall/syscall.h"
+ #include "syscall/chain.h"
+@@ -137,6 +140,107 @@
+ 	return (long) SYSCALL_AVOIDER < 0;
+ }
+ 
++/* Diagnostic: per-syscall counters of the sysenter stops handled by PRoot,
++ * enabled only when PROOT_SYSCALL_STATS=<file> is set in PRoot's own
++ * environment.  PRoot is single-threaded: no locking.  The table is written
++ * (overwritten) every 10 seconds and at exit, as "name count seccomp ptrace"
++ * lines sorted by count, plus a "total" line.  */
++#define STATS_MAX_NR 1024
++#define STATS_PERIOD_S 10
++#define STATS_CHECK_EVERY 1024
++
++int proot_stats_via_seccomp = 0;
++
++static const char *stats_file = NULL;
++static int stats_state = 0; /* 0: not initialized, 1: enabled, -1: disabled.  */
++static unsigned long stats_total[STATS_MAX_NR + 1];
++static unsigned long stats_seccomp[STATS_MAX_NR + 1];
++static const char *stats_name[STATS_MAX_NR + 1];
++static unsigned long stats_stops = 0;
++static time_t stats_last_dump = 0;
++
++static int stats_compare(const void *a, const void *b)
++{
++	unsigned long ca = stats_total[*(const int *) a];
++	unsigned long cb = stats_total[*(const int *) b];
++	return (ca < cb) - (ca > cb);
++}
++
++static void stats_dump(void)
++{
++	static int order[STATS_MAX_NR + 1];
++	unsigned long total = 0, total_seccomp = 0;
++	int count = 0;
++	FILE *file;
++	int i;
++
++	file = fopen(stats_file, "w");
++	if (file == NULL)
++		return;
++
++	for (i = 0; i <= STATS_MAX_NR; i++) {
++		if (stats_total[i] == 0)
++			continue;
++		order[count++] = i;
++		total += stats_total[i];
++		total_seccomp += stats_seccomp[i];
++	}
++	qsort(order, count, sizeof(order[0]), stats_compare);
++
++	for (i = 0; i < count; i++) {
++		int nr = order[i];
++		const char *name = stats_name[nr];
++		char fallback[32];
++
++		if (name == NULL || name[0] == '\0') {
++			snprintf(fallback, sizeof(fallback), "nr%d", nr);
++			name = fallback;
++		}
++		if (nr == STATS_MAX_NR)
++			name = "other";
++		fprintf(file, "%s %lu seccomp=%lu ptrace=%lu\n", name, stats_total[nr],
++			stats_seccomp[nr], stats_total[nr] - stats_seccomp[nr]);
++	}
++	fprintf(file, "total %lu seccomp=%lu ptrace=%lu\n", total, total_seccomp,
++		total - total_seccomp);
++	fclose(file);
++}
++
++static void stats_count(Tracee *tracee)
++{
++	unsigned long nr;
++	struct timespec now;
++
++	if (stats_state == 0) {
++		stats_file = getenv("PROOT_SYSCALL_STATS");
++		if (stats_file == NULL || stats_file[0] == '\0') {
++			stats_state = -1;
++			return;
++		}
++		stats_state = 1;
++		clock_gettime(CLOCK_MONOTONIC, &now);
++		stats_last_dump = now.tv_sec;
++		atexit(stats_dump);
++	}
++
++	nr = (unsigned long) peek_reg(tracee, ORIGINAL, SYSARG_NUM);
++	if (nr >= STATS_MAX_NR)
++		nr = STATS_MAX_NR;
++	stats_total[nr]++;
++	if (proot_stats_via_seccomp)
++		stats_seccomp[nr]++;
++	if (stats_name[nr] == NULL)
++		stats_name[nr] = stringify_sysnum(get_sysnum(tracee, ORIGINAL));
++
++	if (++stats_stops % STATS_CHECK_EVERY == 0) {
++		clock_gettime(CLOCK_MONOTONIC, &now);
++		if (now.tv_sec - stats_last_dump >= STATS_PERIOD_S) {
++			stats_last_dump = now.tv_sec;
++			stats_dump();
++		}
++	}
++}
++
+ void translate_syscall(Tracee *tracee)
+ {
+ 	const bool is_enter_stage = IS_IN_SYSENTER(tracee);
+@@ -158,6 +262,9 @@
+ 
+ 		print_current_regs(tracee, 3, "sysenter start");
+ 
++		if (stats_state >= 0)
++			stats_count(tracee);
++
+ #ifdef HAS_POKEDATA_WORKAROUND
+ 		/* In case of pokedata workaround has cancelled real enter
+ 		 * of syscall we've enqueued start of syscall again
+diff --git a/src/syscall/syscall.h b/src/syscall/syscall.h
+--- a/src/syscall/syscall.h
++++ b/src/syscall/syscall.h
+@@ -54,6 +54,10 @@
+ extern int set_sysarg_data(Tracee *tracee, const void *tracer_ptr, word_t size, Reg reg);
+ 
+ extern void translate_syscall(Tracee *tracee);
++
++/* Diagnostic (PROOT_SYSCALL_STATS=<file>): set by event.c when the current
++ * stop is a PTRACE_EVENT_SECCOMP one.  */
++extern int proot_stats_via_seccomp;
+ extern int  translate_syscall_enter(Tracee *tracee);
+ extern void translate_syscall_exit(Tracee *tracee);
+ extern bool is_voided_syscall(const Tracee *tracee, RegVersion version);
+diff --git a/src/tracee/event.c b/src/tracee/event.c
+--- a/src/tracee/event.c
++++ b/src/tracee/event.c
+@@ -477,6 +477,8 @@
+ 	int signal;
+ 	bool sysexit_necessary;
+ 
++	proot_stats_via_seccomp = 0;
++
+ 	if (!seccomp_after_ptrace_enter_checked) {
+ 		seccomp_after_ptrace_enter = getenv("PROOT_ASSUME_NEW_SECCOMP") != NULL;
+ 		seccomp_after_ptrace_enter_checked = true;
+@@ -691,6 +693,7 @@
+ 			unsigned long flags = 0;
+ 
+ 			signal = 0;
++			proot_stats_via_seccomp = 1;
+ 
+ 			if (!seccomp_detected) {
+ 				tracee->seccomp = ENABLED;

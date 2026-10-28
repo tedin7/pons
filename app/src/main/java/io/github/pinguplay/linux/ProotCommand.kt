@@ -56,6 +56,10 @@ object ProotCommand {
             "TERM=xterm-256color",
             "LANG=C.UTF-8",
             "PATH=/opt/pinguplay/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games",
+            // Where the guest really lives, for libpinguplay-fastpath (file calls
+            // without proot stops); programs opt in by preloading it.
+            "PINGUPLAY_FASTPATH_ROOT=${paths.rootfs.path}",
+            "PINGUPLAY_FASTPATH_BINDS=/tmp=${paths.tmp.path}:/dev/shm=${paths.shm.path}",
         ) + GRAPHICS_ENV + listOf("/bin/sh", "-c", script)
 
         return ProcessBuilder(command).redirectErrorStream(true).apply {
