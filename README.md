@@ -29,9 +29,8 @@ games, with every layer measured and every improvement published.
 
 Full disclosure: Pons was written almost entirely by AI. A human with one tablet and an
 unreasonable wish to play Crusader Kings III in bed asked the questions, said "it's
-ugly" when it was ugly, and held the tablet while it got warm. The AI wrote the code,
-patched an x86 translator at midnight, and argued with Android about DNS for longer
-than anyone should.
+ugly" when it was ugly, and held the tablet while it got warm. The AI wrote the code and
+patched an x86 translator at midnight.
 
 Every number in this README was measured on that one tablet. That is exactly why we
 need you.
