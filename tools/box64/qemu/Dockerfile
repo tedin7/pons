@@ -5,7 +5,7 @@
 FROM pons-box64test
 ARG QEMU=10.0.6
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
-        ninja-build python3-venv pkg-config libglib2.0-dev flex bison wget xz-utils >/dev/null \
+        make ninja-build python3-venv pkg-config libglib2.0-dev flex bison wget xz-utils bzip2 >/dev/null \
     && wget -q https://download.qemu.org/qemu-$QEMU.tar.xz \
     && tar xf qemu-$QEMU.tar.xz && cd qemu-$QEMU \
     && ./configure --target-list=aarch64-linux-user --enable-plugins --disable-docs \

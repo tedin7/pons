@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <functional>
 #include <mutex>
 #include <queue>
@@ -159,12 +160,17 @@ void run(const char *name, uint64_t (*work)()) {
 
 }  // namespace
 
-int main() {
-    run("pathfinding", pathfinding);
-    run("economy", economy);
-    run("matrix", matrix);
-    run("libm", libm);
-    run("threads", threads);
+// transbench [workload]: all workloads, or only the named one (for exact
+// instruction counts per workload under qemu, see tools/box64/qemu/inflation.sh).
+int main(int argc, char **argv) {
+    const char *only = argc > 1 ? argv[1] : nullptr;
+    const struct { const char *name; uint64_t (*work)(); } all[] = {
+        {"pathfinding", pathfinding}, {"economy", economy}, {"matrix", matrix},
+        {"libm", libm}, {"threads", threads},
+    };
+    for (const auto &w : all)
+        if (!only || std::strcmp(only, w.name) == 0)
+            run(w.name, w.work);
     std::fprintf(stderr, "checksum %llu\n", static_cast<unsigned long long>(g_sink));
     return 0;
 }
