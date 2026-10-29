@@ -175,6 +175,16 @@ The game itself reaches "In Game" about 45 s after it starts.
   xor32 10.8 → 1.6. Across the transbench workloads: economy −5 %, threads −3 %,
   pathfinding −2 %, libm and matrix unchanged (same instruction count; matrix is
   bimodal from run to run on both builds); Box64's own tests unchanged (34/36).
+  Patch 0012: conversions and roundings that follow the x86 rounding mode
+  (`cvtsi2ss`, `cvtsd2si`, `roundps`, x87 `fist`…) wrote the mode into FPCR before
+  the instruction and the old FPCR back after it. Each FPCR write stalls the core,
+  and the mode almost never changes (round to nearest), so 0012 writes FPCR only when
+  it does. Found by profiling CK3 with Box64's perf map: one `cvtsi2ss` was 1.8 % of
+  all game time. On the tablet (pp11 → pp12): idiombench cvtsi2ss 26.0 → 2.1 ns,
+  cvtsd2si 26.1 → 2.1 ns; transbench matrix −17 %, threads −4 to −10 %, the rest
+  unchanged; Box64's own tests unchanged (34/36, rounding tests pass). CK3 heavy,
+  3 runs: 30 fps, CPU max 55-65 °C (pp11 56-85), GPU 49-54 °C (54-76), skin 37-41 °C
+  (43-48).
 - **Copy into the frame buffer.** Mesa still copies each frame (7 MB) into the Android
   buffer; rendering directly into it would remove the copy.
 - **Thermal governor.** Use Android's thermal headroom API to lower the frame cap

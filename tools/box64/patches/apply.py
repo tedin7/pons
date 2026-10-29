@@ -660,4 +660,28 @@ if code.count(OLD_XOR) != 1:
     sys.exit("apply.py: emit_xor32 EOR not found once in dynarec_arm64_emit_logic.c")
 lg.write_text(code.replace(OLD_XOR, NEW_XOR, 1))
 
+# 0012: rounding-mode switches around conversions and roundings. CVTSI2SS,
+# CVTSD2SI, ROUNDPS, x87 FIST and friends honour the x86 rounding mode, so
+# Box64 wrote it into FPCR before the instruction and wrote the old FPCR back
+# after it. A write to FPCR is slow on arm64 (the core has to settle every float
+# instruction in flight first), and the x86 mode is nearly always the same as
+# the one already in FPCR (round to nearest). Write FPCR only when the mode
+# really changes; bit 63 of the saved value (RES0 in FPCR) tells the restore
+# that nothing was written. Fixed sizes, so the dynarec passes stay consistent.
+OLD_SET = "    MSR_fpcr(s1);               // put new fpscr\n    return s3;\n"
+NEW_SET = ("    // Pons 0012: write FPCR only if the mode changes; else mark s3 (bit 63).\n"
+           "    EORx_REG(s2, s1, s3);\n"
+           "    CBNZx(s2, 12);\n"
+           "    ORRx_mask(s3, s3, 1, 1, 0);\n"
+           "    B(8);\n"
+           "    MSR_fpcr(s1);               // put new fpscr\n    return s3;\n")
+OLD_RESTORE = "    MSR_fpcr(s1);               // put back fpscr\n"
+NEW_RESTORE = ("    TBNZ(s1, 63, 8);            // Pons 0012: FPCR was not changed\n"
+               "    MSR_fpcr(s1);               // put back fpscr\n")
+hr = arm / "dynarec_arm64_helper.c"
+code = hr.read_text()
+if code.count(OLD_SET) != 2 or code.count(OLD_RESTORE) != 1:
+    sys.exit("apply.py: x87/sse setround or restoreround not found in dynarec_arm64_helper.c (0012)")
+hr.write_text(code.replace(OLD_SET, NEW_SET).replace(OLD_RESTORE, NEW_RESTORE))
+
 print("pons box64 patches applied")

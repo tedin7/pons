@@ -19,6 +19,8 @@ static double now_ns(void)
 
 static volatile unsigned long long sink64[2];
 static volatile double sinkd[2] __attribute__((aligned(16)));
+static volatile float sinkf;
+static volatile int sink32;
 
 #define RUN(name, body, ...)                                         \
     do {                                                              \
@@ -55,6 +57,17 @@ int main(void)
         "imull %%ecx, %%ecx\n\timull %%ecx, %%ecx\n\timull %%ecx, %%ecx\n\timull %%ecx, %%ecx\n\t"
         "movq %%rcx, %0",
         : "=m"(sink64[0]) :: "rcx", "cc");
+    /* Conversions that honour the x86 rounding mode (MXCSR), as compilers emit
+     * them for (float)i and lrint(d). A translator that switches the arm64
+     * rounding mode around each one pays a pipeline drain every time. */
+    RUN("cvtsi2ss",
+        "pxor %%xmm1, %%xmm1\n\tcvtsi2ssl %%ecx, %%xmm1\n\taddl $3, %%ecx\n\t"
+        "pxor %%xmm2, %%xmm2\n\tcvtsi2ssl %%ecx, %%xmm2\n\taddss %%xmm2, %%xmm1\n\t"
+        "movss %%xmm1, %0",
+        : "=m"(sinkf) :: "rcx", "xmm1", "xmm2", "cc");
+    RUN("cvtsd2si",
+        "cvtsd2si %1, %%eax\n\tcvtsd2si %1, %%edx\n\taddl %%edx, %%eax\n\tmovl %%eax, %0",
+        : "=m"(sink32) : "x"(three) : "rax", "rdx");
     /* Reference: the same chain with nothing carried between iterations. */
     RUN("mov0",
         "movl $7, %%ecx\n\t"
