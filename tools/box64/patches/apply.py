@@ -22,6 +22,10 @@ translation time, never in relocatable/cached blocks) and the generic int3
 bridge handler (atomic add). One shared table keyed by function address. When
 unset, no code is generated and nothing is counted. Blocks loaded from DynaCache
 carry no counters: run with the cache off.
+
+0005: CMP with a small immediate encodes it in SUBS (see the code below).
+0006: MOVUPS/MOVAPS through [base + index] use arm64 register-offset LDR/STR Q.
+0007: MOV r32/r64 <-> [base + index (x4/x8)] use register-offset LDR/STR too.
 """
 import pathlib
 import sys
@@ -321,5 +325,203 @@ patch_once(int3, "            wrapper_t w = bridge->w;\n            a = F64(addr
     "            wrapper_t w = bridge->w;\n            a = F64(addr);\n"
     "            if(pons_callstats_on) pons_callstats_count((void*)a, bridge);\n",
     "bridge call (0003)")
+
+
+# 0005: CMP with a small immediate. Box64 always loaded the immediate into a
+# register (MOVZ) and compared registers (SUBS); arm64 SUBS takes a 12-bit
+# immediate directly. When the flags are consumed natively (no pending flags, no
+# AF) the register is never needed, which is the common "cmp $n, reg; jcc" of
+# loops: one instruction instead of two. Same flags, same results otherwise.
+arm = pathlib.Path(sys.argv[1]) / "src/dynarec/arm64"
+tests = arm / "dynarec_arm64_emit_tests.c"
+code = tests.read_text()
+CMP_C = """
+// Pons 0005: emit CMP32 of s1 against a constant 0 < c < 4096, using s2..s5 as
+// scratch. Without pending flags or AF the constant is encoded in SUBS itself.
+void emit_cmp32_c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s2, int s3, int s4, int s5)
+{
+    int fallback = 0;
+    IFX_PENDOR0 { fallback = 1; }
+    IFX(X_AF) { fallback = 1; }
+    if (fallback) {
+        MOV64xw(s2, c);
+        emit_cmp32(dyn, ninst, rex, s1, s2, s3, s4, s5);
+        return;
+    }
+    SET_DFNONE();
+    SUBSxw_U12(s5, s1, c);   // res = s1 - c
+    IFX(X_ZF) {
+        IFNATIVE(NF_EQ) {} else {
+            CSETw(s4, cEQ);
+            BFIw(xFlags, s4, F_ZF, 1);
+        }
+    }
+    IFX(X_CF) {
+        // inverted carry
+        IFNATIVE(NF_CF) {
+            GEN_INVERTED_CARRY();
+        } else {
+            CSETw(s4, cCC);
+            BFIw(xFlags, s4, F_CF, 1);
+        }
+    }
+    IFX(X_OF) {
+        IFNATIVE(NF_VF) {} else {
+            CSETw(s4, cVS);
+            BFIw(xFlags, s4, F_OF, 1);
+        }
+    }
+    IFX(X_SF) {
+        IFNATIVE(NF_SF) {} else {
+            LSRxw(s3, s5, (rex.w)?63:31);
+            BFIw(xFlags, s3, F_SF, 1);
+        }
+    }
+    IFX(X_PF) {
+        emit_pf(dyn, ninst, s5, s4);
+    }
+}
+
+// emit CMP32 instruction, from cmp s1 , 0, using s3 and s4 as scratch"""
+OLD_CMP0 = "\n// emit CMP32 instruction, from cmp s1 , 0, using s3 and s4 as scratch"
+if code.count(OLD_CMP0) != 1:
+    sys.exit("apply.py: emit_cmp32_0 comment not found once in dynarec_arm64_emit_tests.c")
+tests.write_text(code.replace(OLD_CMP0, CMP_C, 1))
+
+helper = arm / "dynarec_arm64_helper.h"
+code = helper.read_text()
+for old, new in (("#define emit_cmp32_0    STEPNAME(emit_cmp32_0)",
+                  "#define emit_cmp32_0    STEPNAME(emit_cmp32_0)\n#define emit_cmp32_c    STEPNAME(emit_cmp32_c)"),
+                 ("void emit_cmp32_0(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);",
+                  "void emit_cmp32_0(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int s3, int s4);\n"
+                  "void emit_cmp32_c(dynarec_arm_t* dyn, int ninst, rex_t rex, int s1, int64_t c, int s2, int s3, int s4, int s5);")):
+    if code.count(old) != 1:
+        sys.exit("apply.py: %r not found once in dynarec_arm64_helper.h" % old[:40])
+    code = code.replace(old, new, 1)
+helper.write_text(code)
+
+op00 = arm / "dynarec_arm64_00.c"
+code = op00.read_text()
+for reg in ("xRAX", "ed"):
+    old = ("            if(i64) {\n"
+           "                MOV64xw(x2, i64);\n"
+           "                emit_cmp32(dyn, ninst, rex, %s, x2, x3, x4, x5);\n" % reg)
+    new = ("            if(i64 > 0 && i64 < 0x1000) {\n"
+           "                emit_cmp32_c(dyn, ninst, rex, %s, i64, x2, x3, x4, x5);\n"
+           "            } else if(i64) {\n"
+           "                MOV64xw(x2, i64);\n"
+           "                emit_cmp32(dyn, ninst, rex, %s, x2, x3, x4, x5);\n" % (reg, reg))
+    if reg == "ed":
+        old = old.replace("            ", "                    ")
+        new = new.replace("            ", "                    ")
+    if code.count(old) != 1:
+        sys.exit("apply.py: CMP call site for %s not found once in dynarec_arm64_00.c" % reg)
+    code = code.replace(old, new, 1)
+op00.write_text(code)
+
+
+# 0006: 16-byte SSE moves (MOVUPS/MOVAPS) through [base + index]. Box64 added
+# base and index into a scratch register, then loaded or stored through it; arm64
+# LDR/STR Q take a register offset. Only the plain case, so nothing else changes:
+# no displacement, scale 1, no segment, 64-bit addressing, no 0x67 prefix.
+# 0007: the same for MOV r32/r64 <-> memory, where arm64 also scales the index
+# by the access size (x4 for 32-bit, x8 for 64-bit), as x86 code often does.
+helper = arm / "dynarec_arm64_helper.h"
+code = helper.read_text()
+SIB_HELPER = """
+// Pons 0006/0007: true when the memory operand is [base + index << scale] with no
+// displacement, no segment and 64-bit addressing, and the scale is 0 or equals
+// size_log2 (what arm64 register-offset LDR/STR of that size can shift by).
+// Gives the native base and index registers, and whether the index is shifted.
+static inline int pons_sib_regoff(uintptr_t addr, uint8_t nextop, rex_t rex, int size_log2,
+                                  uint8_t* base, uint8_t* index, uint8_t* shifted)
+{
+    if ((nextop & 0xC7) != 0x04 || rex.seg || rex.is32bits || rex.is67)
+        return 0;
+    uint8_t sib = *(uint8_t*)addr;
+    int scale = sib >> 6;
+    if ((sib & 7) == 5 || (scale != 0 && scale != size_log2))
+        return 0;
+    int idx = ((sib >> 3) & 7) + (rex.x << 3);
+    if (idx == 4)
+        return 0;
+    *base = TO_NAT((sib & 7) + (rex.b << 3));
+    *index = TO_NAT(idx);
+    *shifted = scale != 0;
+    return 1;
+}
+
+#endif"""
+last = code.rstrip().rfind("#endif")
+if last < 0:
+    sys.exit("apply.py: no closing #endif in dynarec_arm64_helper.h")
+code = code[:last] + SIB_HELPER.lstrip("\n") + code[last + len("#endif"):]
+helper.write_text(code)
+
+op0f = arm / "dynarec_arm64_0f.c"
+code = op0f.read_text()
+GETED = "addr = geted(dyn, addr, ninst, nextop, &ed, x1, &fixedaddress, &unscaled, 0xfff<<4, 15, rex, NULL, 0, 0);"
+def fused(indent, store):
+    lines = [
+        "if(pons_sib_regoff(addr, nextop, rex, 4, &ed, &wback, &u8)) {",
+        "    addr++; // the SIB byte (scale is 0 here: x86 cannot scale by 16)",
+        "    %s(v0, ed, wback);" % ("VSTR128_REG" if store else "VLDR128_REG"),
+        "} else {",
+        "    " + GETED,
+        "    %s(v0, ed, fixedaddress);" % ("VST128" if store else "VLD128"),
+        "}",
+    ]
+    return "\n".join(indent + l for l in lines)
+for name, indent, store, tail in (
+        ('INST_NAME("MOVUPS Gx,Ex");', " " * 16, False, "VLD128(v0, ed, fixedaddress);   // no alignment issue with ARMv8 NEON :)"),
+        ('INST_NAME("MOVAPS Gx,Ex");', " " * 16, False, "VLD128(v0, ed, fixedaddress);"),
+        ('INST_NAME("MOVUPS Ex,Gx");', " " * 20, True, "VST128(v0, ed, fixedaddress);"),
+        ('INST_NAME("MOVAPS Ex,Gx");', " " * 16, True, "VST128(v0, ed, fixedaddress);")):
+    start = code.find(name)
+    if start < 0 or code.count(name) != 1:
+        sys.exit("apply.py: %s not found once" % name)
+    old = indent + GETED + "\n" + indent + tail
+    at = code.find(old, start)
+    if at < 0 or at - start > 1200:
+        sys.exit("apply.py: memory path of %s not found" % name)
+    code = code[:at] + fused(indent, store) + code[at + len(old):]
+op0f.write_text(code)
+
+op00 = arm / "dynarec_arm64_00.c"
+code = op00.read_text()
+LOAD_OLD = """                addr = geted(dyn, addr, ninst, nextop, &ed, x2, &fixedaddress, &unscaled, 0xfff<<(2+rex.w), (1<<(2+rex.w))-1, rex, &lock, 0, 0);
+                if(!lock && !dyn->insts[ninst].use_lrcpc && BOX64ENV(unity)"""
+LOAD_NEW = """                if(!dyn->insts[ninst].use_lrcpc && pons_sib_regoff(addr, nextop, rex, 2+rex.w, &ed, &wback, &u8)) {
+                    addr++; // the SIB byte
+                    lock = 0;
+                    SMREADLOCK(lock);
+                    if(!u8) LDRxw_REG(gd, ed, wback);
+                    else if(rex.w) LDRx_REG_LSL3(gd, ed, wback);
+                    else LDRw_REG_LSL2(gd, ed, wback);
+                    break;
+                }
+                addr = geted(dyn, addr, ninst, nextop, &ed, x2, &fixedaddress, &unscaled, 0xfff<<(2+rex.w), (1<<(2+rex.w))-1, rex, &lock, 0, 0);
+                if(!lock && !dyn->insts[ninst].use_lrcpc && BOX64ENV(unity)"""
+start = code.find('INST_NAME("MOV Gd, Ed");')
+at = code.find(LOAD_OLD, start)
+if start < 0 or at < 0 or at - start > 600:
+    sys.exit("apply.py: MOV Gd, Ed memory path not found")
+code = code[:at] + LOAD_NEW + code[at + len(LOAD_OLD):]
+STORE_OLD = """                } else {
+                    addr = geted(dyn, addr, ninst, nextop, &ed, x2, &fixedaddress, &unscaled, 0xfff << (2 + rex.w), (1 << (2 + rex.w)) - 1, rex, &lock, 0, 0);"""
+STORE_NEW = """                } else if(!dyn->insts[ninst].use_lrcpc && pons_sib_regoff(addr, nextop, rex, 2+rex.w, &ed, &wback, &u8)) {
+                    addr++; // the SIB byte
+                    lock = 0;
+                    if(!u8) STRxw_REG(gd, ed, wback);
+                    else if(rex.w) STRx_REG_LSL3(gd, ed, wback);
+                    else STRw_REG_LSL2(gd, ed, wback);
+                } else {
+                    addr = geted(dyn, addr, ninst, nextop, &ed, x2, &fixedaddress, &unscaled, 0xfff << (2 + rex.w), (1 << (2 + rex.w)) - 1, rex, &lock, 0, 0);"""
+start = code.find('INST_NAME("MOV Ed, Gd");')
+at = code.find(STORE_OLD, start)
+if start < 0 or at < 0 or at - start > 1500:
+    sys.exit("apply.py: MOV Ed, Gd memory path not found")
+code = code[:at] + STORE_NEW + code[at + len(STORE_OLD):]
+op00.write_text(code)
 
 print("pons box64 patches applied")

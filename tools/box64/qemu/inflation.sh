@@ -10,9 +10,11 @@ set -eu
 TAR="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"; shift
 WORK="${*:-pathfinding economy matrix libm}"
 HERE=$(cd "$(dirname "$0")" && pwd)
-docker run --rm -v "$TAR":/b64.tar.xz:ro -v "$HERE/../../transbench":/bench:ro pons-qemu sh -euc "
+# Extra Box64 settings for the x86 run: BOX64_ENV="BOX64_DYNAREC_BIGBLOCK=3 ..."
+docker run --rm -e BOX64_ENV="${BOX64_ENV:-}" -v "$TAR":/b64.tar.xz:ro -v "$HERE/../../transbench":/bench:ro pons-qemu sh -euc "
   mkdir -p /b64 && tar -C /b64 -xJf /b64.tar.xz
   B=\$(find /b64 -name box64 -type f | head -1)
+  for kv in \$BOX64_ENV; do export \$kv; done
   g++ -O2 -std=c++17 -march=x86-64-v2 -ffp-contract=off -pthread -o /tmp/tb-x86 /bench/transbench.cpp
   aarch64-linux-gnu-g++ -O2 -std=c++17 -march=armv8.7-a -ffp-contract=off -pthread -o /tmp/tb-arm /bench/transbench.cpp
   Q='/opt/qemu/bin/qemu-aarch64 -L /usr/aarch64-linux-gnu -plugin /opt/qemu/libinsn.so -d plugin'

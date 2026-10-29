@@ -128,6 +128,7 @@ every second on the device.
 | Neverball 1600×1132, native arm64 / x86_64 via Box64 | 78–95 / 80–149 fps (GPU-bound) |
 | Box64 vs native, integer / pathfinding / matrix workloads | 72–97 % |
 | Box64 vs native, math library calls | 9 % (each native call costs ~10 ns of bridge; see below) |
+| Translation inflation (arm64 instructions via Box64 / native), upstream → Pons patches 0005-0007 | matrix 1.98 → **1.50**, pathfinding 1.64 → 1.60, economy 0.89 → 0.88 (qemu instruction count) |
 | int→double conversion loop, Box64 upstream → patched | 16.9 → 5.9 ns |
 
 **Crusader Kings III** (x86_64 Linux build, 1600×1132, 30 fps cap):
