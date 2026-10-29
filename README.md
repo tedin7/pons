@@ -168,6 +168,13 @@ The game itself reaches "In Game" about 45 s after it starts.
   −28 %. Found with `tools/transbench/bridgeparts.c` (a native replica of the
   bridge, piece by piece) and Box64's code dump, after two plausible fixes (0008,
   0009: no argument reload, RSP kept in registers) measured as no gain.
+  Patch 0011 does the same for the other idioms whose result ignores the old value:
+  `pcmpeqd x,x` (all ones), `psubd x,x`, MMX `pxor`, and `xor eax,eax` on integer
+  registers (now `MOV w,wzr`). `tools/transbench/idiombench.c` measures each one
+  (ns per iteration, pp10 → pp11 on the tablet): pcmpeqd 17.2 → 2.2, psubd 21.6 → 2.3,
+  xor32 10.8 → 1.6. Across the transbench workloads: economy −5 %, threads −3 %,
+  pathfinding −2 %, libm and matrix unchanged (same instruction count; matrix is
+  bimodal from run to run on both builds); Box64's own tests unchanged (34/36).
 - **Copy into the frame buffer.** Mesa still copies each frame (7 MB) into the Android
   buffer; rendering directly into it would remove the copy.
 - **Thermal governor.** Use Android's thermal headroom API to lower the frame cap

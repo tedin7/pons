@@ -626,4 +626,38 @@ if code.count(OLD_EORQ) != 1:
 code = code.replace(OLD_EORQ, NEW_EORQ, 1)
 em.write_text(code)
 
+
+# 0011: the other x86 idioms whose result does not depend on the register's old
+# value, translated to arm64 instructions that still wait for it:
+#   pcmpeqb/w/d/q x,x  "all ones"   CMEQ Vd, Vn, Vn  -> MOVI Vd, #-1
+#   psubb/w/d/q x,x    "zero"       SUB  Vd, Vn, Vn  -> MOVI Vd, #0
+#   pxor mm,mm (MMX)   "zero"       EOR  Dd, Dn, Dn  -> MOVI Dd, #0
+#   xor r32/r64, same  "zero"       EOR  Wd, Wn, Wn  -> MOV Wd, WZR
+# Integer compares only: a value is always equal to itself. Same sizes, so the
+# dynarec passes stay consistent. The AVX forms use the same macros.
+code = em.read_text()
+for old, new in (
+    ("#define VEOR(Vd, Vn, Vm)                    EMIT(VLOGIC_gen(0, 0b00, Vm, Vn, Vd))",
+     "#define VEOR(Vd, Vn, Vm)                    do { if ((Vn) == (Vm)) MOVI_64(Vd, 0); else EMIT(VLOGIC_gen(0, 0b00, Vm, Vn, Vd)); } while (0)"),
+    *[("#define VSUBQ_%d(Vd, Vn, Vm)%s EMIT(ADDSUB_vector(1, 1, 0b%s, Vm, Vn, Vd))" % (b, pad, sz),
+       "#define VSUBQ_%d(Vd, Vn, Vm)%s do { if ((Vn) == (Vm)) MOVIQ_64(Vd, 0); else EMIT(ADDSUB_vector(1, 1, 0b%s, Vm, Vn, Vd)); } while (0)" % (b, pad, sz))
+      for b, sz, pad in ((8, "00", " " * 16), (16, "01", " " * 15), (32, "10", " " * 15), (64, "11", " " * 15))],
+    *[("#define VCMEQ%s_%d(Rd, Rn, Rm)%s EMIT(CMEQ_vector(%d, 1, 0b%s, Rm, Rn, Rd))" % (q, b, pad, int(q == "Q"), sz),
+       "#define VCMEQ%s_%d(Rd, Rn, Rm)%s do { if ((Rn) == (Rm)) MOVI%s_64(Rd, 0xff); else EMIT(CMEQ_vector(%d, 1, 0b%s, Rm, Rn, Rd)); } while (0)" % (q, b, pad, q, int(q == "Q"), sz))
+      for q, b, sz, pad in (("", 8, "00", " " * 8), ("", 16, "01", " " * 7), ("", 32, "10", " " * 7),
+                            ("Q", 8, "00", " " * 7), ("Q", 16, "01", " " * 6), ("Q", 32, "10", " " * 6), ("Q", 64, "11", " " * 6))]):
+    if code.count(old) != 1:
+        sys.exit("apply.py: %r not found once in arm64_emitter.h" % old)
+    code = code.replace(old, new, 1)
+em.write_text(code)
+lg = arm / "dynarec_arm64_emit_logic.c"
+code = lg.read_text()
+OLD_XOR = "    EORxw_REG(s1, s1, s2);\n    IFX(X_PEND) {\n        STRxw_U12(s1, xEmu, offsetof(x64emu_t, res));"
+NEW_XOR = ("    // Pons 0011: xor r,r is 0, MOV from WZR does not wait for r.\n"
+           "    if (s1 == s2) MOVxw_REG(s1, xZR); else EORxw_REG(s1, s1, s2);\n"
+           "    IFX(X_PEND) {\n        STRxw_U12(s1, xEmu, offsetof(x64emu_t, res));")
+if code.count(OLD_XOR) != 1:
+    sys.exit("apply.py: emit_xor32 EOR not found once in dynarec_arm64_emit_logic.c")
+lg.write_text(code.replace(OLD_XOR, NEW_XOR, 1))
+
 print("pons box64 patches applied")
