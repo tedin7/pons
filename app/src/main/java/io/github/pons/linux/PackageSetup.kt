@@ -64,7 +64,7 @@ class PackageSetup(context: Context, private val paths: LinuxPaths) {
             add(Group.SCREEN)
             add(Group.AUDIO)
             if ("pons-bench" in program) add(Group.BENCHMARK)
-            if ("pons-steam" in program || "pons-ck3" in program) add(Group.STEAM)
+            if ("pons-steam" in program || "pons-game" in program || "pons-ck3" in program) add(Group.STEAM)
         }
     }
 }

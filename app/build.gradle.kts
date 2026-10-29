@@ -3,6 +3,8 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    // Screenshot tests of the launcher: gradle :app:verifyPaparazziDebug (recordPaparazziDebug to update).
+    id("app.cash.paparazzi")
 }
 
 // Components come from the GitHub release; a debug build can use a local mirror
@@ -26,8 +28,8 @@ android {
         applicationId = "io.github.pons"
         minSdk = 33
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         ndk { abiFilters += "arm64-v8a" }
     }
 

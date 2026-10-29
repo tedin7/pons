@@ -7,9 +7,12 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.format.DateUtils
 import android.view.WindowInsets
 import io.github.pons.display.DisplayActivity
 import io.github.pons.linux.Components
+import io.github.pons.linux.GameLibrary
+import io.github.pons.linux.LinuxPaths
 import io.github.pons.session.DisplaySettings
 import io.github.pons.session.LinuxSession
 import io.github.pons.session.LinuxSessionService
@@ -29,7 +32,7 @@ class MainActivity : Activity(), LauncherActions {
         super.onCreate(savedInstanceState)
         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 0)
         settings = DisplaySettings(this)
-        screen = LauncherView(this, GAMES, TOOLS, this, footer())
+        screen = LauncherView(this, STEAM, TOOLS, this, footer())
         // Android 15 draws apps edge to edge: keep the content clear of the system bars.
         screen.setOnApplyWindowInsetsListener { view, insets ->
             val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
@@ -37,6 +40,13 @@ class MainActivity : Activity(), LauncherActions {
             insets
         }
         setContentView(screen)
+        Thread({
+            UpdateCheck(this).find()?.let { update ->
+                runOnUiThread {
+                    screen.showUpdate(update.version) { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(update.page))) }
+                }
+            }
+        }, "pons-update-check").start()
     }
 
     override fun onResume() {
@@ -59,7 +69,21 @@ class MainActivity : Activity(), LauncherActions {
         screen.setLog(LinuxSession.log())
         refresh()
         LinuxSession.addListener(listener)
+        loadLibrary()
     }
+
+    /** Reads the installed Steam games (and decodes their artwork) off the main thread. */
+    private fun loadLibrary() = Thread({
+        val library = GameLibrary(LinuxPaths(this))
+        val width = resources.displayMetrics.widthPixels / 2
+        val entries = library.games().map { game ->
+            val played = if (game.lastPlayed > 0)
+                "Played " + DateUtils.getRelativeTimeSpanString(game.lastPlayed * 1000).toString().lowercase()
+            else "Installed"
+            Entry(game.name, played, "pons-game ${game.appId}", R.drawable.ic_gamepad, Look.ACCENT, art = library.art(game, width))
+        }
+        runOnUiThread { screen.setGames(entries) }
+    }, "pons-library").start()
 
     override fun onStop() {
         LinuxSession.removeListener(listener)
@@ -107,10 +131,8 @@ class MainActivity : Activity(), LauncherActions {
 
     companion object {
         private const val EXTRA_PROGRAM = "program"
-        private val GAMES = listOf(
-            Entry("Crusader Kings III", "Medieval grand strategy, Linux version", "pons-ck3", R.drawable.ic_crown, Look.ACCENT),
-            Entry("Steam", "Sign in, download and update games", "pons-steam", R.drawable.ic_download, 0xFF7FA7E8.toInt(), action = "Open"),
-        )
+        private val STEAM =
+            Entry("Steam", "Sign in, download and update games", "pons-steam", R.drawable.ic_download, 0xFF7FA7E8.toInt(), action = "Open")
         private val TOOLS = listOf(
             Entry("Vulkan cube", "Check that graphics work", "vkcube --wsi xcb"),
             Entry("Graphics benchmark", "Measure how fast the tablet is", "pons-bench"),

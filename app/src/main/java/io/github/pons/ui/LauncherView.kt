@@ -1,6 +1,7 @@
 package io.github.pons.ui
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
@@ -25,6 +26,8 @@ data class Entry(
     val icon: Int = 0,
     val color: Int = Look.ACCENT,
     val action: String = "Play",
+    /** Wide artwork (Steam's library hero or header); null shows [icon] instead. */
+    val art: Bitmap? = null,
 )
 
 /** What the launcher does when touched; the activity supplies it. */
@@ -37,12 +40,12 @@ interface LauncherActions {
 }
 
 /**
- * The launcher screen: status, game cards, settings and tools side by side, and the
- * technical log folded away at the bottom. Plain views, no theme dependencies.
+ * The launcher screen: status, Steam and the installed games as cards, settings and
+ * tools side by side, and the technical log folded away at the bottom. Plain views.
  */
 class LauncherView(
     context: Context,
-    private val games: List<Entry>,
+    private val steam: Entry,
     private val tools: List<Entry>,
     private val actions: LauncherActions,
     private val footer: String = "",
@@ -55,6 +58,9 @@ class LauncherView(
     private val screenButton = context.pill("Open screen") { actions.openScreen() }
     private val stopButton = context.pill("Stop", fill = Look.DANGER, textColor = Look.TEXT) { actions.stop() }
     private val cards = mutableMapOf<String, Card>()
+    private var games: List<Entry> = emptyList()
+    private var running: String? = null
+    private val gameGrid = LinearLayout(context).apply { orientation = VERTICAL }
     private val resolutionValue = context.text("", 16f, Look.TEXT, bold = true)
     private val batteryValue = context.text("", 16f, Look.TEXT, bold = true)
     private val batteryChevron = context.text("›", 26f, Look.MUTED)
@@ -68,6 +74,7 @@ class LauncherView(
         setPadding(context.dp(28), 0, context.dp(28), context.dp(16))
     }
     private val logToggle = context.text("", 14f, Look.MUTED, bold = true)
+    private val updateBanner = LinearLayout(context).apply { visibility = GONE }
 
     init {
         orientation = VERTICAL
@@ -76,8 +83,9 @@ class LauncherView(
         val body = LinearLayout(context).apply {
             orientation = VERTICAL
             setPadding(context.dp(32), 0, context.dp(32), context.dp(32))
+            addView(updateBanner)
             addView(context.section("Games"))
-            addView(gameRow())
+            addView(gameGrid)
             // Settings and tools side by side on a wide screen, one above the other otherwise.
             if (resources.configuration.screenWidthDp >= WIDE_DP) {
                 addView(LinearLayout(context).apply {
@@ -96,26 +104,65 @@ class LauncherView(
         }
         addView(ScrollView(context).apply { addView(body) }, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         addView(logPanel())
+        setGames(emptyList())
+    }
+
+    /** The installed games, shown after the Steam card; rebuilt when the library changes. */
+    fun setGames(list: List<Entry>) {
+        games = list
+        cards.clear()
+        gameGrid.removeAllViews()
+        val wide = resources.configuration.screenWidthDp >= WIDE_DP
+        val columns = if (wide) 3 else 2
+        val cells: List<View> = listOf(card(steam)) + games.map(::card) + listOfNotNull(if (games.isEmpty()) emptyCard() else null)
+        cells.chunked(columns).forEachIndexed { r, row ->
+            if (r > 0) gameGrid.addView(space(20))
+            gameGrid.addView(LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                for (c in 0 until columns) {
+                    if (c > 0) addView(space(20, horizontal = true))
+                    // Empty cells keep every card the same width; cards share one minimum height.
+                    addView(row.getOrNull(c) ?: space(1, horizontal = true), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+                }
+            })
+        }
+        refreshCards()
     }
 
     /** Running program (null = idle), battery state, current resolution label. */
     fun show(running: String?, batteryFree: Boolean, resolution: String) {
-        val name = (games + tools).firstOrNull { it.program == running }?.title
+        this.running = running
+        val name = (listOf(steam) + games + tools).firstOrNull { it.program == running }?.title
         statusText.text = if (name != null) "$name is running" else "Ready"
         statusText.setTextColor(if (name != null) Look.TEXT else Look.MUTED)
         (statusDot.background as GradientDrawable).setColor(if (name != null) Look.OK else Look.MUTED)
         stopButton.visibility = if (running != null) VISIBLE else GONE
         screenButton.visibility = if (running != null) VISIBLE else GONE
-        cards.forEach { (program, card) ->
-            val on = program == running
-            card.chip.visibility = if (on) VISIBLE else INVISIBLE
-            card.button.text = if (on) "Back to game" else card.entry.action
-            card.view.background = cardBackground(card.entry.color, on)
-        }
+        refreshCards()
         batteryValue.text = if (batteryFree) "Unrestricted  ✓" else "Restricted: tap to fix"
         batteryValue.setTextColor(if (batteryFree) Look.OK else Look.ACCENT)
         batteryChevron.visibility = if (batteryFree) INVISIBLE else VISIBLE
         resolutionValue.text = resolution
+    }
+
+    /** A banner above the games: "Pons [version] is available", with a download button. */
+    fun showUpdate(version: String, onDownload: () -> Unit) = with(updateBanner) {
+        removeAllViews()
+        orientation = HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        background = context.panel(Look.mix(Look.ACCENT, Look.SURFACE, 0.85f), 18, stroke = Look.mix(Look.ACCENT, Look.SURFACE, 0.5f))
+        setPadding(context.dp(22), context.dp(12), context.dp(12), context.dp(12))
+        addView(context.text("Pons $version is available", 15f, Look.TEXT, bold = true), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
+        addView(context.pill("Download", fill = Look.ACCENT, textColor = Look.ON_ACCENT) { onDownload() })
+        (layoutParams as? LayoutParams)?.topMargin = context.dp(16)
+        visibility = VISIBLE
+    }
+
+    private fun refreshCards() = cards.forEach { (program, card) ->
+        val on = program == running
+        card.chip.visibility = if (on) VISIBLE else INVISIBLE
+        card.button.text = if (on) "Back to game" else card.entry.action
+        card.view.foreground = cardEdge(card.entry.color, on)
     }
 
     fun setLog(lines: List<String>) {
@@ -157,14 +204,6 @@ class LauncherView(
         addView(stopButton)
     }
 
-    private fun gameRow() = LinearLayout(context).apply {
-        orientation = HORIZONTAL
-        games.forEachIndexed { i, game ->
-            if (i > 0) addView(space(20, horizontal = true))
-            addView(card(game), LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-        }
-    }
-
     private fun card(game: Entry): View {
         val chip = context.text("●  Running", 13f, Look.OK, bold = true).apply {
             background = context.panel(Look.mix(Look.OK, Look.SURFACE, 0.85f), 14)
@@ -174,46 +213,77 @@ class LauncherView(
         val button = context.pill(game.action, fill = Look.ACCENT, textColor = Look.ON_ACCENT) { actions.run(game.program) }
         val content = LinearLayout(context).apply {
             orientation = VERTICAL
-            setPadding(context.dp(28), context.dp(28), context.dp(28), context.dp(26))
+            setPadding(context.dp(24), context.dp(24), context.dp(24), context.dp(24))
             addView(LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 gravity = Gravity.TOP
-                addView(badge(game.icon, game.color))
+                minimumHeight = context.dp(64)
+                // With artwork the picture says which game it is; without, a badge does.
+                if (game.art == null) addView(badge(game.icon, game.color))
                 addView(space(1, horizontal = true), LayoutParams(0, 1, 1f))
                 addView(chip)
             })
-            addView(context.text(game.title, 24f, Look.TEXT, bold = true).apply {
-                setPadding(0, context.dp(22), 0, context.dp(6))
+            addView(context.text(game.title, 22f, Look.TEXT, bold = true).apply {
+                setPadding(0, context.dp(20), 0, context.dp(4))
+                maxLines = 2
             })
-            addView(context.text(game.subtitle, 15f, Look.MUTED))
-            addView(space(24))
+            addView(context.text(game.subtitle, 14f, Look.MUTED).apply { maxLines = 1 })
+            addView(space(20))
             addView(button, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         }
-        // The card: content over a large faint copy of the game's symbol in the corner.
         val view = FrameLayout(context).apply {
             clipToOutline = true
             isClickable = true
+            minimumHeight = context.dp(270)
+            background = cardBackground(game.color)
             setOnClickListener { actions.run(game.program) }
-            addView(ImageView(context).apply {
-                setImageResource(game.icon)
-                setColorFilter(game.color)
-                alpha = 0.08f
-            }, FrameLayout.LayoutParams(context.dp(150), context.dp(150), Gravity.END or Gravity.BOTTOM).apply {
-                marginEnd = context.dp(22)
-                bottomMargin = context.dp(18)
-            })
-            addView(content)
+            if (game.art != null) {
+                // Steam's artwork, darkened towards the bottom so the text stays readable.
+                addView(ImageView(context).apply {
+                    setImageBitmap(game.art)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                }, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+                addView(View(context).apply {
+                    background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
+                        intArrayOf(Look.SURFACE, (Look.SURFACE and 0xFFFFFF) or 0xB0000000.toInt(), 0x22000000))
+                }, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            } else {
+                // A large faint copy of the symbol in the corner.
+                addView(ImageView(context).apply {
+                    setImageResource(game.icon)
+                    setColorFilter(game.color)
+                    alpha = 0.08f
+                }, FrameLayout.LayoutParams(context.dp(140), context.dp(140), Gravity.END or Gravity.BOTTOM).apply {
+                    marginEnd = context.dp(20)
+                    bottomMargin = context.dp(18)
+                })
+            }
+            addView(content, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         }
         cards[game.program] = Card(view, chip, button, game)
-        view.background = cardBackground(game.color, false)
         return view
     }
 
-    /** Surface tinted towards the game's colour in one corner; a coloured edge while it runs. */
-    private fun cardBackground(color: Int, running: Boolean) = GradientDrawable(
+    /** Shown next to Steam while nothing is installed: says how to get a game. */
+    private fun emptyCard() = LinearLayout(context).apply {
+        orientation = VERTICAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = context.dp(270)
+        background = context.panel(Look.BACKGROUND, 28, stroke = Look.OUTLINE)
+        setPadding(context.dp(28), context.dp(24), context.dp(28), context.dp(24))
+        addView(context.text("No games yet", 20f, Look.TEXT, bold = true))
+        addView(context.text("Open Steam, sign in and install a game that has a Linux version. It shows up here.",
+            14f, Look.MUTED).apply { setPadding(0, context.dp(8), 0, 0); setLineSpacing(0f, 1.2f) })
+    }
+
+    /** Surface tinted towards the game's colour in one corner. */
+    private fun cardBackground(color: Int) = GradientDrawable(
         GradientDrawable.Orientation.TL_BR,
         intArrayOf(Look.mix(color, Look.SURFACE, 0.82f), Look.SURFACE, Look.SURFACE),
-    ).apply {
+    ).apply { cornerRadius = context.dp(28).toFloat() }
+
+    /** The card's edge, drawn over any artwork: coloured while the game runs. */
+    private fun cardEdge(color: Int, running: Boolean) = GradientDrawable().apply {
         cornerRadius = context.dp(28).toFloat()
         setStroke(context.dp(if (running) 2 else 1), if (running) Look.mix(color, Look.SURFACE, 0.2f) else Look.OUTLINE)
     }

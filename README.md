@@ -82,12 +82,19 @@ One file call, end to end (`tools/compat/pons-fastpath.c`):
 `tools/dev/pp-fastpath-check.sh` runs ~90 tricky file calls with and without the
 fast path and diffs the results; they must be identical.
 
-## Games are profiles
+## Your Steam library
 
-A game is a small text file, `tools/input/games/<id>.conf`: Steam app id, folder,
-program, frame cap, the log line that means "ready", how to reset to a known save,
-and benchmark scenes. `pons-game <id>` launches any profile; `pp-bench.sh <id>:<scene>`
-benchmarks it. Adding a game means adding a profile, not code.
+The launcher shows every game Steam has installed, read from Steam's own
+`appmanifest_*.acf` files, with Steam's cached artwork. Nothing is hard-coded per game:
+`pons-game <app id>` signs Steam in and asks it to start the game (`steam -applaunch`),
+as on a Linux PC, then follows the game's processes and freezes Steam's web helper
+while it runs.
+
+A game can also have a profile, `tools/input/games/<id>.conf`: Steam app id, folder,
+program, frame cap, the log line that means "ready", how to reset to a known save, and
+benchmark scenes. With a profile, `pons-game` runs the game's program directly with
+tuned settings (frame cap, file fast path), and `pp-bench.sh <id>:<scene>` can
+benchmark it. Profiles are optional tuning, not a list of supported games.
 
 ## Measuring
 

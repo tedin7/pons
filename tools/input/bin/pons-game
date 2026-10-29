@@ -1,18 +1,32 @@
 #!/bin/sh
-# pons-game <profile> [game arguments...]
-# Starts a game described by /opt/pons/games/<profile>.conf: signs Steam in when
-# the game needs it, runs the game with the profile's settings, and freezes Steam's
-# web interface while the game runs (PONS_STEAM_FREEZE=0 keeps it running).
+# pons-game <profile | Steam app id> [game arguments...]
+# Starts a game and freezes Steam's web interface while it runs
+# (PONS_STEAM_FREEZE=0 keeps it running).
+# - A profile, /opt/pons/games/<name>.conf (also found by its STEAM_APPID), runs the
+#   game's program directly with tuned settings (frame cap, file fast path).
+# - Any other installed Steam game is started by Steam itself, as on a Linux PC.
 set -u
-PROFILE="${1:?usage: pons-game <profile> [game arguments]}"; shift
-CONF="/opt/pons/games/$PROFILE.conf"
-[ -f "$CONF" ] || { echo "Unknown game: $PROFILE" >&2; exit 1; }
+WHICH="${1:?usage: pons-game <profile | Steam app id> [game arguments]}"; shift
 NAME= STEAM_APPID= DIR= EXEC= ARGS= MAX_FPS=
-. "$CONF"
+CONF="/opt/pons/games/$WHICH.conf"
+[ -f "$CONF" ] || CONF=$(grep -l -x "STEAM_APPID=\"$WHICH\"" /opt/pons/games/*.conf 2>/dev/null | head -n 1)
+if [ -n "$CONF" ]; then
+    . "$CONF"
+else
+    case "$WHICH" in *[!0-9]*) echo "Unknown game: $WHICH" >&2; exit 1 ;; esac
+    STEAM_APPID=$WHICH
+fi
 
 STEAM="$HOME/.local/share/Steam"
-GAME="$STEAM/steamapps/common/$DIR"
-[ -x "$GAME/$EXEC" ] || { echo "$NAME is not installed: install it from Steam." >&2; exit 1; }
+if [ -z "$EXEC" ]; then
+    MANIFEST="$STEAM/steamapps/appmanifest_$STEAM_APPID.acf"
+    acf() { sed -n "s/^[[:space:]]*\"$1\"[[:space:]]*\"\(.*\)\"[[:space:]]*\$/\1/p" "$MANIFEST" 2>/dev/null | head -n 1; }
+    NAME=$(acf name) INSTALLDIR=$(acf installdir)
+    [ -n "$INSTALLDIR" ] || { echo "Steam game $STEAM_APPID is not installed: install it from Steam." >&2; exit 1; }
+else
+    GAME="$STEAM/steamapps/common/$DIR"
+    [ -x "$GAME/$EXEC" ] || { echo "$NAME is not installed: install it from Steam." >&2; exit 1; }
+fi
 
 if [ -n "$STEAM_APPID" ]; then
     LOG="$STEAM/logs/connection_log.txt"
@@ -32,17 +46,6 @@ if [ -n "$STEAM_APPID" ]; then
     export SteamAppId="$STEAM_APPID" SteamGameId="$STEAM_APPID"
 fi
 
-echo "Starting $NAME…"
-cd "$GAME"
-[ -n "$MAX_FPS" ] && export PONS_MAX_FPS="${PONS_MAX_FPS_GAME:-$MAX_FPS}"
-export DISABLE_VK_LAYER_VALVE_steam_overlay_1=1
-# File calls without proot stops (tools/compat/pons-fastpath.c): loading
-# opens and checks tens of thousands of files. PONS_FASTPATH=0 turns it off.
-FAST=/opt/pons/lib/libpons-fastpath.so
-if [ "${PONS_FASTPATH:-1}" = 1 ] && [ -n "${PONS_FASTPATH_ROOT:-}" ] && [ -f "$FAST" ]; then
-    export LD_PRELOAD="$FAST${LD_PRELOAD:+:$LD_PRELOAD}"
-fi
-
 # Steam's web interface (steamwebhelper, a Chromium) keeps ~0.5 GB of memory and
 # some CPU busy while the game runs, yet the game only talks to the steam process.
 # Killing it would not help: Steam starts it again.
@@ -54,9 +57,49 @@ webhelpers() {
 signal_webhelpers() { for p in $(webhelpers); do kill -"$1" "$p" 2>/dev/null; done; }
 # If memory runs out, the kernel should kill the idle web helper first, not stall.
 sacrifice_webhelpers() { for p in $(webhelpers); do echo 1000 > /proc/"$p"/oom_score_adj 2>/dev/null; done; }
+freezing() { [ -n "$STEAM_APPID" ] && [ "${PONS_STEAM_FREEZE:-1}" = 1 ]; }
+
+echo "Starting $NAME…"
+if [ -z "$EXEC" ]; then
+    # Steam starts the game with its own launch settings; follow the game's processes
+    # by their install folder on the command line (the pattern sits in a file so this
+    # grep does not find itself).
+    PATTERN=/tmp/pons-game-$$.pattern
+    printf '%s\n' "steamapps/common/$INSTALLDIR/" > "$PATTERN"
+    game_running() { grep -l -s -a -F -f "$PATTERN" /proc/[0-9]*/cmdline >/dev/null; }
+    pons-steam -applaunch "$STEAM_APPID" >/dev/null 2>&1 &
+    waited=0
+    until game_running; do
+        sleep 2
+        waited=$((waited + 2))
+        if [ "$waited" -ge 180 ]; then
+            rm -f "$PATTERN"
+            echo "$NAME did not start within 3 minutes: try starting it from Steam." >&2
+            exit 1
+        fi
+    done
+    if freezing; then
+        trap 'signal_webhelpers CONT; rm -f "$PATTERN"' EXIT INT TERM
+        ( sleep 60; game_running && sacrifice_webhelpers && signal_webhelpers STOP ) &
+    fi
+    while game_running; do sleep 3; done
+    rm -f "$PATTERN"
+    exit 0
+fi
+
+cd "$GAME"
+[ -n "$MAX_FPS" ] && export PONS_MAX_FPS="${PONS_MAX_FPS_GAME:-$MAX_FPS}"
+export DISABLE_VK_LAYER_VALVE_steam_overlay_1=1
+# File calls without proot stops (tools/compat/pons-fastpath.c): loading
+# opens and checks tens of thousands of files. PONS_FASTPATH=0 turns it off.
+FAST=/opt/pons/lib/libpons-fastpath.so
+if [ "${PONS_FASTPATH:-1}" = 1 ] && [ -n "${PONS_FASTPATH_ROOT:-}" ] && [ -f "$FAST" ]; then
+    export LD_PRELOAD="$FAST${LD_PRELOAD:+:$LD_PRELOAD}"
+fi
+
 
 # shellcheck disable=SC2086  # ARGS is a word list by design
-if [ -n "$STEAM_APPID" ] && [ "${PONS_STEAM_FREEZE:-1}" = 1 ]; then
+if freezing; then
     trap 'signal_webhelpers CONT' EXIT INT TERM
     "$EXEC" $ARGS "$@" &
     game=$!
