@@ -41,7 +41,7 @@ case "$1" in
         DEF_KEYS= DEF_LOG= DEF_READY= DEF_PREPARE=
         ;;
 esac
-ADB="${ADB:-/root/.local/mercati-android-tools/sdk/platform-tools/adb -P 5037}"
+ADB="${ADB:-adb -P 5037}"
 S="$ADB -s ${PP_SERIAL:?set PP_SERIAL}"
 PKG=io.github.pons
 COOL_C="${PP_BENCH_COOL_C:-45}"

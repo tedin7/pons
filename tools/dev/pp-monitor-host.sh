@@ -1,6 +1,6 @@
 #!/bin/sh
 # pp-monitor-host.sh <seconds>: every 2 s, one adb call -> fps, busiest CK3 threads, temps, free memory.
-S="${ADB:-/root/.local/mercati-android-tools/sdk/platform-tools/adb -P 5037} -s ${PP_SERIAL:?set PP_SERIAL}"
+S="${ADB:-adb -P 5037} -s ${PP_SERIAL:?set PP_SERIAL}"
 LOG="${PP_MONITOR_LOG:-/tmp/pp-monitor.log}"
 END=$(( $(date +%s) + $1 ))
 prev=""; pt=""

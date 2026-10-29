@@ -4,7 +4,7 @@
 # so the table shows what proot itself costs. Appends to $PP_SUITE_RESULTS.
 set -u
 LABEL="${1:-suite}"
-ADB="${ADB:-/root/.local/mercati-android-tools/sdk/platform-tools/adb -P 5037}"
+ADB="${ADB:-adb -P 5037}"
 S="$ADB -s ${PP_SERIAL:?set PP_SERIAL}"
 RESULTS="${PP_SUITE_RESULTS:-/root/pons-bench/suite.tsv}"
 mkdir -p "$(dirname "$RESULTS")"

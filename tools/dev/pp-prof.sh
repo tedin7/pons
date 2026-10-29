@@ -12,7 +12,7 @@
 set -u
 LABEL="${1:-loadsim}"; [ $# -gt 0 ] && shift
 DIR=$(cd "$(dirname "$0")" && pwd)
-ADB="${ADB:-/root/.local/mercati-android-tools/sdk/platform-tools/adb -P 5037}"
+ADB="${ADB:-adb -P 5037}"
 S="$ADB -s ${PP_SERIAL:?set PP_SERIAL}"
 PKG=io.github.pons
 D=/data/user/0/$PKG

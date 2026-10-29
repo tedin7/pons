@@ -141,7 +141,7 @@ class LauncherView(
         val name = (listOf(steam) + games + tools).firstOrNull { it.program == running }?.title
         statusText.text = when {
             name != null -> "$name is running"
-            steamReady -> "Ready · Steam signed in"
+            steamReady -> "Ready · Steam started"
             else -> "Ready"
         }
         statusText.setTextColor(if (name != null) Look.TEXT else Look.MUTED)

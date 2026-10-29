@@ -5,7 +5,7 @@
 # and survives adb disconnects. PP_PROOT_ENV="VAR=value ..." is set for proot itself
 # (e.g. PROOT_SYSCALL_STATS=/data/user/0/io.github.pons/cache/proot-tmp/x.txt).
 set -eu
-ADB="${ADB:-/root/.local/mercati-android-tools/sdk/platform-tools/adb -P 5037}"
+ADB="${ADB:-adb -P 5037}"
 SERIAL="${PP_SERIAL:?set PP_SERIAL to the adb serial}"
 PKG=io.github.pons
 LIB=$($ADB -s "$SERIAL" shell dumpsys package $PKG | sed -n 's/.*legacyNativeLibraryDir=//p' | head -1)/arm64
