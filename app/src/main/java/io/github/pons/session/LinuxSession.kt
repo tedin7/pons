@@ -19,6 +19,13 @@ object LinuxSession {
 
     private const val TAG = "Pons"
     private const val MAX_LOG_LINES = 400
+    private const val MB = 1_048_576L
+    private const val DETAIL_CHARS = 90
+    private val APT_PROGRESS = Regex("^(Get:|Unpacking |Setting up )")
+    private val STEAM_DOWNLOAD = Regex("Downloading update \\(([0-9,]+) of ([0-9,]+) KB\\)")
+    private val STEAM_PERCENT = Regex("Set (percent complete|status message):")
+    private val COMPONENT_NAMES = mapOf(
+        "rootfs" to "Linux system", "mesa" to "graphics driver", "box64" to "x86 translator", "tools" to "Pons helpers")
 
     private val processes = CopyOnWriteArrayList<Process>()
     private val logLines = ArrayDeque<String>()
@@ -43,6 +50,12 @@ object LinuxSession {
     @Volatile var programStartedAt = 0L
         private set
 
+    /** What the session is doing, for the loading screen. [fraction] null = no measure. */
+    data class Stage(val title: String, val detail: String = "", val fraction: Float? = null, val failed: Boolean = false)
+
+    /** Empty title while the program itself is starting (the screen names it). */
+    @Volatile var stage = Stage("Starting Linux")
+
     /** Set by [stop]: errors after it are just the program being torn down. */
     @Volatile private var stopped = false
     @Volatile private var flushFile: File? = null
@@ -63,13 +76,16 @@ object LinuxSession {
         flushFile = paths.dynacacheFlush
         val guard = MemoryGuard(context, ::emit).also { memory = it }
         try {
+            stage = Stage("Starting Linux")
             installMissing(context, paths, program)
             guard.makeRoom()
+            stage = Stage("Starting the Linux screen")
             startScreen(paths, DisplaySettings(context).resolution)
             startInput(paths)
             startAudioAndBus(paths)
             running = true
             programStartedAt = android.os.SystemClock.uptimeMillis()
+            stage = Stage("")
             emit("▶ $program")
             val payload = launch(paths, program, "program")
             guard.watch { stop() }
@@ -77,7 +93,10 @@ object LinuxSession {
             emit("■ exited with code $code")
         } catch (e: Exception) {
             Log.e(TAG, "Session failed", e)
-            if (!stopped) emit("ERROR: ${e.message ?: e.javaClass.simpleName}")
+            if (!stopped) {
+                emit("ERROR: ${e.message ?: e.javaClass.simpleName}")
+                stage = Stage("Something went wrong", e.message ?: e.javaClass.simpleName, failed = true)
+            }
         } finally {
             stop()
         }
@@ -118,14 +137,29 @@ object LinuxSession {
 
     private fun installMissing(context: Context, paths: LinuxPaths, program: String) {
         val installer = ComponentInstaller(context, paths)
-        installer.missing(Components.ALL).forEach { component ->
+        val missing = installer.missing(Components.ALL)
+        missing.forEachIndexed { i, component ->
             emit("Installing ${component.id}…")
-            installer.install(component) { status -> emit("  $status") }
+            val title = "Setting up Linux, step ${i + 1} of ${missing.size}"
+            val label = COMPONENT_NAMES[component.id] ?: component.id
+            val total = component.sizeBytes.coerceAtLeast(1)
+            stage = Stage(title, "Downloading the $label", 0f)
+            installer.install(component, { status -> emit("  $status") },
+                onBytes = { done ->
+                    stage = Stage(title, "Downloading the $label · ${done / MB} of ${total / MB} MB", done.toFloat() / total)
+                },
+                onFiles = { n -> stage = Stage(title, "Unpacking the $label · $n files") })
         }
         val packages = PackageSetup(context, paths)
         PackageSetup.groupsFor(program).filterNot(packages::isDone).forEach { group ->
             emit("Installing Linux packages: ${group.name.lowercase()} (first time only)…")
-            packages.install(group) { line -> emit("  $line") }
+            val title = "Installing Linux packages (first time only)"
+            stage = Stage(title, group.name.lowercase())
+            packages.install(group) { line ->
+                emit("  $line")
+                // apt's "Get:", "Unpacking", "Setting up" lines say what it is on.
+                if (APT_PROGRESS.containsMatchIn(line)) stage = Stage(title, line.trim().take(DETAIL_CHARS))
+            }
         }
     }
 
@@ -174,11 +208,29 @@ object LinuxSession {
         return process
     }
 
+    /**
+     * Turns a line of the program's output into the loading screen's text. Steam's own
+     * updater says "Downloading update (A of B KB)..." and "Set percent complete: N".
+     */
+    private fun programStage(line: String): Stage {
+        STEAM_DOWNLOAD.find(line)?.let { m ->
+            val done = m.groupValues[1].replace(",", "").toLong()
+            val total = m.groupValues[2].replace(",", "").toLong().coerceAtLeast(1)
+            return Stage("", "Updating Steam · ${done / 1024} of ${total / 1024} MB", done.toFloat() / total)
+        }
+        if (STEAM_PERCENT.containsMatchIn(line)) return stage
+        return Stage("", line.trim().take(DETAIL_CHARS))
+    }
+
     private fun pump(process: Process, name: String) {
         Thread({
             runCatching {
                 process.inputStream.bufferedReader().useLines { lines ->
-                    lines.forEach { emit("[$name] $it") }
+                    lines.forEach { line ->
+                        emit("[$name] $line")
+                        // The program's own messages ("Waiting for your Steam account…") say how far it got.
+                        if (name == "program" && stage.title.isEmpty() && line.isNotBlank()) stage = programStage(line)
+                    }
                 }
             }
         }, "pons-log-$name").start()

@@ -27,24 +27,29 @@ class ComponentInstaller(private val context: Context, private val paths: LinuxP
 
     fun missing(components: List<Component>): List<Component> = components.filterNot(::isInstalled)
 
-    fun install(component: Component, onStatus: (String) -> Unit) {
+    /** [onBytes]: bytes downloaded so far; [onFiles]: files unpacked so far. */
+    fun install(component: Component, onStatus: (String) -> Unit, onBytes: (Long) -> Unit = {}, onFiles: (Int) -> Unit = {}) {
         val destination = if (component.intoRootfs) paths.rootfs else paths.rootfs.also {
             if (it.exists()) it.deleteRecursively()
         }
         component.replaces?.let { File(paths.rootfs, it).deleteRecursively() }
-        openSource(component, onStatus).use { input ->
-            TarXzExtractor.extract(input, destination) { n -> onStatus("${component.id}: $n file") }
+        openSource(component, onStatus, onBytes).use { input ->
+            TarXzExtractor.extract(input, destination) { n -> onStatus("${component.id}: $n file"); onFiles(n) }
         }
         if (!component.intoRootfs) writeNetworkConfig()
         marker(component).writeText(component.version)
     }
 
-    private fun openSource(component: Component, onStatus: (String) -> Unit): InputStream {
+    private fun openSource(component: Component, onStatus: (String) -> Unit, onBytes: (Long) -> Unit): InputStream {
         component.assetName?.let { return context.assets.open(it) }
         val url = component.url ?: throw IOException("${component.id} has no source")
         val file = File(context.cacheDir, "${component.id}-${component.version}.tar.xz")
         if (!file.exists() || sha256(file) != component.sha256) {
-            download(url, file) { done -> onStatus("${component.id}: ${done / 1_048_576} MB") }
+            var logged = 0L
+            download(url, file) { done ->
+                onBytes(done)
+                if (done - logged >= LOG_EVERY_BYTES) onStatus("${component.id}: ${done / 1_048_576} MB").also { logged = done }
+            }
             val actual = sha256(file)
             if (actual != component.sha256) {
                 file.delete()
@@ -73,7 +78,7 @@ class ComponentInstaller(private val context: Context, private val paths: LinuxP
                         if (read < 0) break
                         output.write(buffer, 0, read)
                         total += read
-                        if (total - lastReport > 4_194_304) onBytes(total).also { lastReport = total }
+                        if (total - lastReport > REPORT_EVERY_BYTES) onBytes(total).also { lastReport = total }
                     }
                 }
             }
@@ -103,5 +108,10 @@ class ComponentInstaller(private val context: Context, private val paths: LinuxP
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private companion object {
+        const val REPORT_EVERY_BYTES = 262_144L
+        const val LOG_EVERY_BYTES = 4_194_304L
     }
 }

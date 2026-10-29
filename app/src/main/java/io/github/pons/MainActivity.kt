@@ -26,6 +26,7 @@ class MainActivity : Activity(), LauncherActions {
 
     private lateinit var screen: LauncherView
     private lateinit var settings: DisplaySettings
+    private var games: List<Entry> = emptyList()
     private val listener: (String) -> Unit = { line -> runOnUiThread { screen.appendLog(line); refresh() } }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,7 +83,7 @@ class MainActivity : Activity(), LauncherActions {
             else "Installed"
             Entry(game.name, played, "pons-game ${game.appId}", R.drawable.ic_gamepad, Look.ACCENT, art = library.art(game, width))
         }
-        runOnUiThread { screen.setGames(entries) }
+        runOnUiThread { games = entries; screen.setGames(entries) }
     }, "pons-library").start()
 
     override fun onStop() {
@@ -103,8 +104,11 @@ class MainActivity : Activity(), LauncherActions {
     override fun run(program: String) {
         // Pressing the same program again just brings its screen back: restarting
         // Steam would throw away a login in progress.
-        if (LinuxSession.program != program) LinuxSessionService.start(this, program)
-        openDisplay()
+        if (LinuxSession.program != program) {
+            LinuxSession.stage = LinuxSession.Stage("Starting Linux")
+            LinuxSessionService.start(this, program)
+        }
+        openDisplay(program)
     }
 
     /**
@@ -118,7 +122,7 @@ class MainActivity : Activity(), LauncherActions {
             Uri.parse("package:$packageName")))
     }
 
-    override fun openScreen() = openDisplay()
+    override fun openScreen() = openDisplay(LinuxSession.program)
 
     override fun stop() {
         LinuxSessionService.stop(this)
@@ -127,7 +131,13 @@ class MainActivity : Activity(), LauncherActions {
 
     override fun nextResolution(): String = settings.nextResolution().label
 
-    private fun openDisplay() = startActivity(Intent(this, DisplayActivity::class.java))
+    /** The Linux screen, with the program's name and artwork for its loading screen. */
+    private fun openDisplay(program: String?) {
+        val entry = (listOf(STEAM) + games + TOOLS).firstOrNull { it.program == program }
+        startActivity(Intent(this, DisplayActivity::class.java)
+            .putExtra(DisplayActivity.EXTRA_TITLE, entry?.title)
+            .putExtra(DisplayActivity.EXTRA_APP_ID, program?.removePrefix("pons-game ")?.takeIf { it.all(Char::isDigit) }))
+    }
 
     companion object {
         private const val EXTRA_PROGRAM = "program"
