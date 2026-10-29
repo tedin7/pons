@@ -28,6 +28,9 @@ class ThermalGovernor(
     private var coolSince = 0L
     private var running = false
 
+    /** When the current game started presenting frames (0 = not presenting). */
+    private var presentingSince = 0L
+
     /** Latest status from the listener; used when the headroom forecast is NaN. */
     @Volatile private var status = PowerManager.THERMAL_STATUS_NONE
 
@@ -62,8 +65,13 @@ class ThermalGovernor(
             // Game over: the next one starts from its own cap.
             if (step != 0) apply(0, Float.NaN)
             coolSince = 0L
+            presentingSince = 0L
             return
         }
+        if (presentingSince == 0L) presentingSince = nowMs
+        // Loading heats the CPU in bursts and Android's 10 s forecast overreacts
+        // (it asked for 24 fps at a 40 C skin on CK3): judge only steady play.
+        if (nowMs - presentingSince < WARMUP_MS) return
         val headroom = power.getThermalHeadroom(FORECAST_S)
         val hot = (!headroom.isNaN() && headroom >= HOT_HEADROOM) ||
             status >= PowerManager.THERMAL_STATUS_MODERATE
@@ -106,5 +114,6 @@ class ThermalGovernor(
         const val COOL_HEADROOM = 0.65f
         const val COOL_MS = 20_000L
         const val STEP_DOWN_MS = 6_000L
+        const val WARMUP_MS = 45_000L
     }
 }

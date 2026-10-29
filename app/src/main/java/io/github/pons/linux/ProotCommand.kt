@@ -25,6 +25,9 @@ object ProotCommand {
         "PONS_PRESENT=/tmp/pons-present",
         // Ask the app for Android graphics buffers to write frames into (no upload).
         "PONS_AHB=1",
+        // The GPU copies each frame into the Android buffer instead of a 7 MB CPU
+        // memcpy (wsi_pons_gpu.h). CK3 map: CPU 80 -> 51 C, skin 47 -> 39 C.
+        "PONS_GPU_COPY=1",
         // Keep Box64's translations across starts even though games get killed.
         "PONS_DYNACACHE_FLUSH=/tmp/pons-dynacache-flush",
         "PONS_DYNACACHE_PERIOD=90",
