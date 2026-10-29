@@ -226,8 +226,11 @@ The game itself reaches "In Game" about 45 s after it starts.
   unchanged; Box64's own tests unchanged (34/36, rounding tests pass). CK3 heavy,
   3 runs: 30 fps, CPU max 55-65 °C (pp11 56-85), GPU 49-54 °C (54-76), skin 37-41 °C
   (43-48).
-- **Copy into the frame buffer.** Mesa still copies each frame (7 MB) into the Android
-  buffer; rendering directly into it would remove the copy.
+- **Copy into the frame buffer.** The GPU still copies each frame (7 MB) from Mesa's
+  swapchain image into the Android buffer (the CPU copy is gone, see *Zero-upload
+  frames*). Rendering straight into the buffer would remove it, at the cost of losing
+  UBWC compression on the final image; worth doing only if a timestamp query shows the
+  copy costs more than about 0.4 ms per frame.
 - **Thermal governor.** Use Android's thermal headroom API to lower the frame cap
   before the device throttles.
 - **Windows games.** Most of Steam is Windows-only; that needs Wine + DXVK over Box64.
