@@ -25,6 +25,30 @@ games, with every layer measured and every improvement published.
 4. Tap **Play**. The first start downloads about 60 MB of components (Debian, Mesa,
    Box64) and Linux packages.
 
+## Built with AI, and you are invited
+
+Full disclosure: Pons was written almost entirely by AI. A human with one tablet and an
+unreasonable wish to play Crusader Kings III in bed asked the questions, said "it's
+ugly" when it was ugly, and held the tablet while it got warm. The AI wrote the code,
+patched an x86 translator at midnight, and argued with Android about DNS for longer
+than anyone should.
+
+Every number in this README was measured on that one tablet. That is exactly why we
+need you.
+
+- **Got a different device?** Snapdragon, a phone, a Pad that is not a Pad 3: install it,
+  try it, tell us what happened. "It caught fire" is a valid bug report (please don't).
+- **Got a different game?** Any Steam game with a Linux version should appear in the
+  launcher. Press Play and report back: works, works badly, or a black screen of
+  existential dread. Screenshots and the *Technical log* help a lot.
+- **Want to fix something?** Use your favourite AI, your own two hands, or both. Pull
+  requests are welcome whoever (or whatever) typed them; we only ask that you measured
+  it on a real device and say so.
+- **Want to just watch?** Star the repo. It makes the AI feel seen.
+
+Open an [issue](https://github.com/tedin7/pons/issues) with your device, Android version,
+the game, and what you saw. No report is too small, and no device is too weird.
+
 ## What is new here
 
 Pons stands on proot, Box64, Mesa and Debian. On top of them it adds:
