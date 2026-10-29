@@ -4,7 +4,8 @@ set -eu
 TAG="$1"
 # Patch a copy so the mounted source stays pristine.
 rm -rf /tmp/src && cp -a /src /tmp/src
-python3 /build/patches/apply.py /tmp/src
+# PONS_NO_PATCHES=1 builds upstream as is, to tell our bugs from upstream ones.
+[ "${PONS_NO_PATCHES:-0}" = 1 ] || python3 /build/patches/apply.py /tmp/src
 cmake -S /tmp/src -B /tmp/b -G Ninja \
   -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc -DCMAKE_ASM_COMPILER=aarch64-linux-gnu-gcc \
   -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR=aarch64 \

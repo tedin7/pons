@@ -72,6 +72,7 @@ HELPER = r"""
 #include <signal.h>
 #include <sys/stat.h>
 void SerializeAllMapping();
+void testAllBlocks();
 
 static void* pons_dynacache_saver(void* arg)
 {
@@ -81,10 +82,16 @@ static void* pons_dynacache_saver(void* arg)
     const long period = period_env ? strtol(period_env, NULL, 10) : 0;
     struct stat st;
     long long seen = (flush && stat(flush, &st) == 0) ? (long long)st.st_mtime : 0;
-    long waited = 0;
+    long waited = 0, ticks = 0;
+    /* Pons 0004: PONS_MEMSTATS=1 prints Box64's own allocator usage every 10 s
+     * (custommem.c testAllBlocks: "CustomMem: Total ... allocated memory"), to
+     * tell Box64's memory from the game's. */
+    const int memstats = getenv("PONS_MEMSTATS") != NULL;
     while (!box64_quit) {
         sleep(2);
         waited += 2;
+        if (memstats && ++ticks % 5 == 0)
+            testAllBlocks();
         int save = period > 0 && waited >= period;
         if (flush && stat(flush, &st) == 0 && (long long)st.st_mtime != seen) {
             seen = (long long)st.st_mtime;
@@ -100,10 +107,12 @@ static void* pons_dynacache_saver(void* arg)
 
 static void pons_start_dynacache_saver(void)
 {
-    if (!BOX64ENV(dynacache) || BOX64ENV(dynacache) == 2)
-        return;
-    if (!getenv("PONS_DYNACACHE_FLUSH") && !getenv("PONS_DYNACACHE_PERIOD"))
-        return;
+    if (!getenv("PONS_MEMSTATS")) {
+        if (!BOX64ENV(dynacache) || BOX64ENV(dynacache) == 2)
+            return;
+        if (!getenv("PONS_DYNACACHE_FLUSH") && !getenv("PONS_DYNACACHE_PERIOD"))
+            return;
+    }
     // Keep emulated signals away from this host-only thread.
     sigset_t all, old;
     sigfillset(&all);

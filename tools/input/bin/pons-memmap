@@ -1,0 +1,50 @@
+#!/bin/sh
+# pons-memmap <pid>: where a process's memory goes, from /proc/<pid>/smaps.
+# For a game under Box64 it separates what Box64 adds from what the game itself
+# uses, as far as mappings allow:
+#   box64            the emulator binary
+#   dynarec code     anonymous executable memory: x86 code translated to arm64
+#   x86 image        file mappings of x86 ELF files (the game and its x86 libs)
+#   arm64 libs       native libraries (glibc, Mesa, wrapped libraries)
+#   gpu buffers      /dev/kgsl-3d0 mappings: GPU memory the CPU can see
+#   heap + anon      malloc'd data: the game's own data plus Box64's structures
+#   stacks, other
+# Output: one line per category, kB of Rss, Pss and Swap, then the totals.
+set -u
+PID="${1:?pid}"
+[ -r "/proc/$PID/smaps" ] || { echo "cannot read /proc/$PID/smaps" >&2; exit 1; }
+awk -v root="${PONS_FASTPATH_ROOT:-}" '
+function is_x86(path,    cmd, magic, guest) {
+    if (path in arch) return arch[path]
+    # smaps shows host paths; inside proot, read the file by its guest path.
+    guest = path
+    if (root != "" && index(guest, root) == 1) guest = substr(guest, length(root) + 1)
+    # e_machine at offset 18: 0x3e = x86-64, 0xb7 = aarch64
+    cmd = "od -A n -t x1 -j 18 -N 1 \"" guest "\" 2>/dev/null"
+    magic = ""
+    cmd | getline magic
+    close(cmd)
+    gsub(/ /, "", magic)
+    arch[path] = (magic == "3e")
+    return arch[path]
+}
+/^[0-9a-f]+-[0-9a-f]+ / {
+    perms = $2; path = ""
+    for (i = 6; i <= NF; i++) path = path (i > 6 ? " " : "") $i
+    if (path ~ /\/box64$/) cat = "box64"
+    else if (path == "" && perms ~ /x/) cat = "dynarec code"
+    else if (path == "[heap]" || path == "") cat = "heap + anon"
+    else if (path ~ /^\[stack/ || path ~ /stack/) cat = "stacks"
+    else if (path ~ /kgsl/) cat = "gpu buffers"
+    else if (path ~ /^\//) cat = is_x86(path) ? "x86 image" : "arm64 libs"
+    else cat = "other"
+    next
+}
+/^Rss:/  { rss[cat]  += $2; trss  += $2 }
+/^Pss:/  { pss[cat]  += $2; tpss  += $2 }
+/^Swap:/ { swp[cat]  += $2; tswap += $2 }
+END {
+    printf "%-14s %10s %10s %10s\n", "category", "rss_kB", "pss_kB", "swap_kB"
+    for (c in rss) printf "%-14s %10d %10d %10d\n", c, rss[c], pss[c], swp[c]
+    printf "%-14s %10d %10d %10d\n", "TOTAL", trss, tpss, tswap
+}' "/proc/$PID/smaps" | sort -k2 -rn
