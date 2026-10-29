@@ -127,7 +127,7 @@ every second on the device.
 | vkcube 1600×1132, X server present → Pons direct present | 74 → 352 fps |
 | Neverball 1600×1132, native arm64 / x86_64 via Box64 | 78–95 / 80–149 fps (GPU-bound) |
 | Box64 vs native, integer / pathfinding / matrix workloads | 72–97 % |
-| Box64 vs native, math library calls | 9 % (each native call costs ~10 ns of bridge; see below) |
+| Box64 vs native, math library calls (transbench libm) | 14 % → **75 %** with patch 0010 (see below) |
 | Translation inflation (arm64 instructions via Box64 / native), upstream → Pons patches 0005-0007 | matrix 1.98 → **1.50**, pathfinding 1.64 → 1.60, economy 0.89 → 0.88 (qemu instruction count) |
 | Box64 before → after patches 0005-0007, on the tablet (median of 7 interleaved runs, cores 6-7) | matrix 22.6 → **20.1 ms (−11 %)**, pathfinding 116.8 → **104.6 ms (−10 %)**, economy 62.9 → **54.9 ms (−13 %)**, libm 248 → 251 ms (unchanged) |
 | int→double conversion loop, Box64 upstream → patched | 16.9 → 5.9 ns |
@@ -159,10 +159,15 @@ The game itself reaches "In Game" about 45 s after it starts.
 - **proot's emulated heap** (found and fixed): it resizes an `mmap`ed region in place with
   `mremap`; after glibc trimmed the heap, growth diverged from real `brk` and malloc
   reported corruption (`ls -R`, `loadsim`). Patch 0004 lets the kernel handle `brk`.
-- **Native-call bridge in Box64.** A call from x86 code into a native library costs
-  ~10 ns of register spills and stack bookkeeping, and consecutive calls can no longer
-  overlap (`exp`: 4 ns native, 23 ns translated). Box64 patch 0003 counts native calls
-  per function (`PONS_CALLSTATS=<file>`) to find out how much real games pay.
+- **Math calls in Box64 (solved).** Math-heavy x86 code ran at 9-14 % of native. The
+  cause was not the native-call bridge but a false dependency: x86 zeroing idioms
+  (`pxor xmm0,xmm0`) were translated to `EOR v0,v0,v0`, which on arm64 waits for the
+  old value of v0, i.e. the previous call's result, so no two math calls ever
+  overlapped. Patch 0010 emits `MOVI v0.2d,#0` instead: independent `exp` calls
+  26.6 → 6.2 ns (native 3.7), transbench libm 214 → 39 ms (75 % of native), threads
+  −28 %. Found with `tools/transbench/bridgeparts.c` (a native replica of the
+  bridge, piece by piece) and Box64's code dump, after two plausible fixes (0008,
+  0009: no argument reload, RSP kept in registers) measured as no gain.
 - **Copy into the frame buffer.** Mesa still copies each frame (7 MB) into the Android
   buffer; rendering directly into it would remove the copy.
 - **Thermal governor.** Use Android's thermal headroom API to lower the frame cap

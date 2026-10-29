@@ -26,6 +26,9 @@ carry no counters: run with the cache off.
 0005: CMP with a small immediate encodes it in SUBS (see the code below).
 0006: MOVUPS/MOVAPS through [base + index] use arm64 register-offset LDR/STR Q.
 0007: MOV r32/r64 <-> [base + index (x4/x8)] use register-offset LDR/STR too.
+0008: float/double arguments of native calls are not reloaded from memory.
+0009: x86 RSP/RBP stay in registers across native calls (no reload from memory).
+0010: register-zeroing XORs become MOVI #0, which carries no dependency.
 """
 import pathlib
 import sys
@@ -523,5 +526,104 @@ if start < 0 or at < 0 or at - start > 1500:
     sys.exit("apply.py: MOV Ed, Gd memory path not found")
 code = code[:at] + STORE_NEW + code[at + len(STORE_OLD):]
 op00.write_text(code)
+
+
+# 0008: native calls with float/double arguments (libm and friends). Before such
+# a call Box64 stores XMM0-7 to the emulator (sse_purge07cache) and then call_n
+# reloads each argument from there, though XMMn lives in Vn and the store left
+# it in place: a store-to-load round trip on the critical path of every chained
+# math call (~6 ns on the Snapdragon 8 Elite, measured with bridgeparts.c).
+# An argument that was cached when the purge ran, in the same instruction, is
+# re-attached to its register instead of reloaded.
+hc = arm / "dynarec_arm64_helper.c"
+code = hc.read_text()
+OLD_PURGE = """void sse_purge07cache(dynarec_arm_t* dyn, int ninst, int s1)
+{
+    int old = -1;
+    for (int i=0; i<8; ++i)
+        if(dyn->n.ssecache[i].v!=-1) {"""
+NEW_PURGE = """void sse_purge07cache(dynarec_arm_t* dyn, int ninst, int s1)
+{
+    int old = -1;
+    pons_held_ninst = ninst;
+    pons_held_xmm = 0;
+    for (int i=0; i<8; ++i)
+        if(dyn->n.ssecache[i].v!=-1) {
+            pons_held_xmm |= 1<<i;"""
+OLD_ARGS = """        for(int i=0; i<abs(w)-1; ++i) {
+            sse_get_reg(dyn, ninst, x3, i, w);
+        }"""
+NEW_ARGS = """        for(int i=0; i<abs(w)-1; ++i) {
+            if(pons_held_ninst==ninst && i<8 && (pons_held_xmm&(1<<i))) {
+                // Pons 0008: still in its register, only stored by the purge: no reload
+                dyn->n.xmm_used |= 1<<i;
+                dyn->n.ssecache[i].reg = fpu_get_reg_xmm(dyn, w?NEON_CACHE_XMMW:NEON_CACHE_XMMR, i);
+                dyn->n.ssecache[i].write = w;
+            } else {
+                sse_get_reg(dyn, ninst, x3, i, w);
+            }
+        }"""
+OLD_CALLN = "\nvoid call_n(dynarec_arm_t* dyn, int ninst, void* fnc, int w)\n"
+NEW_CALLN = """
+// Pons 0008: XMM registers 0-7 that sse_purge07cache stored but left in their
+// fixed V register, and the instruction it ran for (read by call_n).
+static __thread int pons_held_ninst = -1;
+static __thread uint8_t pons_held_xmm;
+
+void call_n(dynarec_arm_t* dyn, int ninst, void* fnc, int w)
+"""
+for old, new, what in ((OLD_CALLN, NEW_CALLN, "call_n definition"), (OLD_PURGE, NEW_PURGE, "sse_purge07cache"), (OLD_ARGS, NEW_ARGS, "call_n XMM args")):
+    if code.count(old) != 1:
+        sys.exit("apply.py: %s not found once in dynarec_arm64_helper.c" % what)
+    code = code.replace(old, new, 1)
+hc.write_text(code)
+
+
+# 0009: keep x86 RSP/RBP in registers across native calls. call_n stored them
+# to the emulator struct and loaded them back after the call; everything x86
+# does next goes through RSP, so the CPU had to wait for that load, which it
+# cannot reorder ahead of the callee's own stores: consecutive native calls
+# stopped overlapping. They now also go to x20/x21 (x86 R10/R11, which SysV
+# lets any callee clobber, and which arm64 callees must preserve) and come back
+# from there; the struct copy stays for signal handlers. The eflags reload is
+# dropped too: xFlags is x26, also preserved by the callee.
+hc = arm / "dynarec_arm64_helper.c"
+code = hc.read_text()
+for old, new, what in (
+        ("    MOVx_REG(x5, xR9);\n    // native call\n",
+         "    MOVx_REG(x5, xR9);\n"
+         "    // Pons 0009: x86 R10/R11 are scratch across calls; keep RSP/RBP there\n"
+         "    MOVx_REG(xR10, xRSP);\n"
+         "    MOVx_REG(xR11, xRBP);\n"
+         "    // native call\n", "call_n arg moves"),
+        ("    #define GO(A, B) LDPx_S7_offset(x##A, x##B, xEmu, offsetof(x64emu_t, regs[_##A]))\n"
+         "    GO(RSP, RBP);\n"
+         "    #undef GO\n",
+         "    MOVx_REG(xRSP, xR10);\n"
+         "    MOVx_REG(xRBP, xR11);\n", "call_n RSP/RBP reload"),
+        ("    fpu_popcache(dyn, ninst, x3, 1);\n    LDRx_U12(xFlags, xEmu, offsetof(x64emu_t, eflags));\n    NATIVE_RESTORE_X87PC();",
+         "    fpu_popcache(dyn, ninst, x3, 1);\n    NATIVE_RESTORE_X87PC();", "call_n eflags reload")):
+    if code.count(old) != 1:
+        sys.exit("apply.py: %s not found once in dynarec_arm64_helper.c" % what)
+    code = code.replace(old, new, 1)
+hc.write_text(code)
+
+
+# 0010: x86 zeroing idioms (PXOR/XORPS/XORPD x,x and friends) were translated
+# to EOR Vd, Vn, Vn. x86 cores treat "xor x,x" as dependency-free; on arm64
+# EOR of a register with itself still waits for the register's old value. In a
+# loop like "pxor xmm0,xmm0; cvtsi2sd ...; call exp" that old value is the
+# previous exp() result, so every math call waited for the one before.
+# EOR of a register with itself is always 0: emit MOVI Vd, #0 instead (same
+# size), which no instruction has to wait for.
+em = arm / "arm64_emitter.h"
+code = em.read_text()
+OLD_EORQ = "#define VEORQ(Vd, Vn, Vm)                   EMIT(VLOGIC_gen(1, 0b00, Vm, Vn, Vd))"
+NEW_EORQ = ("// Pons 0010: x ^ x is 0; MOVI does not wait for the old value, EOR does.\n"
+            "#define VEORQ(Vd, Vn, Vm)                   do { if ((Vn) == (Vm)) MOVIQ_64(Vd, 0); else EMIT(VLOGIC_gen(1, 0b00, Vm, Vn, Vd)); } while (0)")
+if code.count(OLD_EORQ) != 1:
+    sys.exit("apply.py: VEORQ definition not found once in arm64_emitter.h")
+code = code.replace(OLD_EORQ, NEW_EORQ, 1)
+em.write_text(code)
 
 print("pons box64 patches applied")

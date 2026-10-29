@@ -48,10 +48,10 @@ object Components {
         // Box64 main after v0.4.4 (LRCPC/LRCPC2 on Arm64) plus Pons's patch that
         // skips FPCR rounding switches on exact int32 -> double conversions, and one that
         // saves the translation cache while the game runs (games here are killed, not exited).
-        version = "main-30d5c771-pp7",
-        sizeBytes = 8_536_844,
-        sha256 = "3b3913b2e08d1d98bf95afa76375d9c01c740ee8f0dabf7f59aa2fba04ae5d44",
-        url = "${BASE}box64-main-30d5c771-pp7-pons.tar.xz",
+        version = "main-30d5c771-pp10",
+        sizeBytes = 8_509_968,
+        sha256 = "4886a5c1301cc1800dda5ce19368df39a43f02a88dabe4156ba24840707177f3",
+        url = "${BASE}box64-main-30d5c771-pp10-pons.tar.xz",
     )
 
     val TOOLS = Component(
