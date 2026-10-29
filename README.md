@@ -173,6 +173,12 @@ every second on the device.
 | Box64 before → after patches 0005-0007, on the tablet (median of 7 interleaved runs, cores 6-7) | matrix 22.6 → **20.1 ms (−11 %)**, pathfinding 116.8 → **104.6 ms (−10 %)**, economy 62.9 → **54.9 ms (−13 %)**, libm 248 → 251 ms (unchanged) |
 | int→double conversion loop, Box64 upstream → patched | 16.9 → 5.9 ns |
 
+The generic speed patches are also published as a Box64 fork, one commit each:
+[tedin7/box64, branch `pons-perf`](https://github.com/tedin7/box64/tree/pons-perf). Same
+tablet, official Box64 vs that branch: transbench libm 215 → 39 ms, matrix 13.3 → 10.8 ms,
+economy 59.0 → 52.8 ms, int↔float conversions 26 → 1.9 ns. They are not proposed upstream
+because Box64 does not accept mostly AI-written pull requests.
+
 **Crusader Kings III** (x86_64 Linux build, 1600×1132, 30 fps cap):
 
 | Scene | fps | late frames > 50 ms | skin temperature |
