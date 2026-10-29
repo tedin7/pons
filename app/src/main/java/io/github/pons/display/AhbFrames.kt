@@ -112,7 +112,16 @@ object AhbFrames {
         client.outputStream.flush()
         dups.forEach { it.close() }
 
-        current?.let { synchronized(retired) { retired.addLast(it) } }
+        // A set the GL thread never drew from has no textures yet: free it now. Only
+        // sets with textures must wait for the GL thread (releaseRetired). A Mesa that
+        // re-requests buffers every frame once leaked 21 MB per request this way.
+        current?.let { old ->
+            if (old.textures.all { it == 0 }) {
+                old.buffers.forEach { nativeRelease(it, 0) }
+            } else {
+                synchronized(retired) { retired.addLast(old) }
+            }
+        }
         current = Set(width, height, strideOut[0], buffers)
         Log.i(TAG, "Zero-upload frames: ${COUNT}x $width x $height, stride ${strideOut[0]}")
     }

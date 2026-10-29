@@ -97,6 +97,14 @@ int main(void)
         printf("%s\n", names[i]);
     struct statvfs vfs;
     printf("statvfs / %s bsize=%lu\n", statvfs("/", &vfs) == 0 ? "ok" : strerror(errno), vfs.f_bsize);
+    /* Create, close, rename: how Mesa publishes its present file. */
+    char tmpname[64];
+    snprintf(tmpname, sizeof tmpname, "/tmp/fastpath-check.%d", (int)getpid());
+    int tf = open(tmpname, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
+    if (tf >= 0)
+        close(tf);
+    printf("create-close-rename %s\n", tf >= 0 && rename(tmpname, "/tmp/fastpath-check") == 0 ? "ok" : strerror(errno));
+    unlink("/tmp/fastpath-check");
     FILE *fp = fopen("/etc/os-release", "r");
     printf("fopen %s first=%s", fp ? "ok" : strerror(errno), fp && fgets(buf, sizeof buf, fp) ? buf : "\n");
     if (fp) fclose(fp);

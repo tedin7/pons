@@ -137,10 +137,22 @@ every second on the device.
 | map, paused | 30.0 | 0 / min | ≤ 55 °C |
 | observer mode, speed 5 (heaviest) | 30.0 | 0 / min | 48 °C |
 
-Loading a save takes ~130 s. Measured per process: the game 235 s user + 150 s system
-CPU, proot 13 s + 75 s. The file fast path targets exactly that system time.
+Loading the save, from app start to the map (Steam sign-in included):
+
+| | wall | CK3 CPU (user + system) | proot CPU (user + system) |
+| --- | --- | --- | --- |
+| before the fast path | ~130 s | 235 s + 150 s | 13 s + 75 s |
+| fast path + kernel heap | **75 s** | 142 s + 60 s | 3 s + 16 s |
+
+The game itself reaches "In Game" about 45 s after it starts.
 
 ## Open problems
+
+- **Memory.** CK3 + Box64 + Steam use about 7 GB of a 16 GB device. With other apps
+  open, the device swapped until it stopped responding (twice, during testing). Pons now
+  closes other apps' background processes before a game, stops the game when free
+  memory stays under 600 MB (warning at 1 GB), and marks Steam's idle web helper as the
+  first thing the kernel may kill.
 
 - **proot's emulated heap** (found and fixed): it resizes an `mmap`ed region in place with
   `mremap`; after glibc trimmed the heap, growth diverged from real `brk` and malloc

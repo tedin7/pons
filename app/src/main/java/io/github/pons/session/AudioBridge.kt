@@ -29,7 +29,13 @@ class AudioBridge(private val fifo: File) {
         val deadline = System.currentTimeMillis() + FIFO_WAIT_MS
         while (running && !fifo.exists()) {
             if (System.currentTimeMillis() > deadline) return
-            Thread.sleep(100)
+            // stop() interrupts this wait; an uncaught InterruptedException here
+            // used to crash the whole app and orphan the Linux processes.
+            try {
+                Thread.sleep(100)
+            } catch (e: InterruptedException) {
+                return
+            }
         }
         val minBuffer = AudioTrack.getMinBufferSize(RATE, CHANNELS, ENCODING)
         val track = AudioTrack.Builder()

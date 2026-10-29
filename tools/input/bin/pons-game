@@ -52,6 +52,8 @@ webhelpers() {
     done
 }
 signal_webhelpers() { for p in $(webhelpers); do kill -"$1" "$p" 2>/dev/null; done; }
+# If memory runs out, the kernel should kill the idle web helper first, not stall.
+sacrifice_webhelpers() { for p in $(webhelpers); do echo 1000 > /proc/"$p"/oom_score_adj 2>/dev/null; done; }
 
 # shellcheck disable=SC2086  # ARGS is a word list by design
 if [ -n "$STEAM_APPID" ] && [ "${PONS_STEAM_FREEZE:-1}" = 1 ]; then
@@ -59,7 +61,7 @@ if [ -n "$STEAM_APPID" ] && [ "${PONS_STEAM_FREEZE:-1}" = 1 ]; then
     "$EXEC" $ARGS "$@" &
     game=$!
     # Let the game sign in first; the freeze starts once it is running.
-    ( sleep 60; kill -0 "$game" 2>/dev/null && signal_webhelpers STOP ) &
+    ( sleep 60; kill -0 "$game" 2>/dev/null && sacrifice_webhelpers && signal_webhelpers STOP ) &
     wait "$game"
     status=$?
     signal_webhelpers CONT

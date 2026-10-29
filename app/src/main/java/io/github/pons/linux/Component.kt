@@ -56,10 +56,10 @@ object Components {
 
     val TOOLS = Component(
         id = "tools",
-        version = "26",
-        sizeBytes = 258_780,
-        sha256 = "c0972a468f7dd992454e72fcef3c9661e017cd9b4a38d7e96dd8eb8b7632e5dd",
-        url = "${BASE}pons-tools-26.tar.xz",
+        version = "28",
+        sizeBytes = 258_960,
+        sha256 = "8d70deb30b1c2496da244d3cbb3913e9dd12e9e82da14829a746ffcbbf133861",
+        url = "${BASE}pons-tools-28.tar.xz",
     )
 
     /** Order matters: the rootfs must exist before anything unpacks into it. */

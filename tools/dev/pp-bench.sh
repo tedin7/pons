@@ -45,6 +45,7 @@ ADB="${ADB:-/root/.local/mercati-android-tools/sdk/platform-tools/adb -P 5037}"
 S="$ADB -s ${PP_SERIAL:?set PP_SERIAL}"
 PKG=io.github.pons
 COOL_C="${PP_BENCH_COOL_C:-45}"
+COOL_SKIN_C="${PP_BENCH_COOL_SKIN_C:-40}"
 READY_TIMEOUT="${PP_BENCH_READY_TIMEOUT:-600}"
 SETTLE="${PP_BENCH_SETTLE:-20}"
 GAME_LOG="${PP_BENCH_GAME_LOG:-$DEF_LOG}"
@@ -74,8 +75,31 @@ stop_all() {
     $S shell "run-as $PKG sh -c 'for p in \$(ps -A -o PID,ARGS | grep -E \"[l]ibproot|[c]k3|[s]team|[X]vfb|[p]ulseaudio|[b]ox64\" | cut -c1-6); do kill -9 \$p; done' 2>/dev/null; am force-stop $PKG" >/dev/null 2>&1
 }
 
+# Safety brake: a run that eats the memory or overheats the device stops at once
+# (a stuck load once froze the tablet until a reboot).
+# Skin temperature, not the CPU sensor: CPU cores read 90+ C on every normal load,
+# while Android throttles when the skin reaches 60 C.
+MIN_FREE_MB="${PP_BENCH_MIN_FREE_MB:-800}"
+MAX_SKIN_C="${PP_BENCH_MAX_SKIN_C:-58}"
+unsafe() {
+    last=$(grep '^S ' "$RAW" | tail -3)
+    [ -z "$last" ] && return 1
+    bad=$(echo "$last" | awk -v m="$MIN_FREE_MB" -v c="$MAX_SKIN_C" '$8 < m || $6 > c { n++ } END { print n + 0 }')
+    if [ "$bad" -ge 3 ]; then
+        log "SAFETY STOP: $(echo "$last" | tail -1 | awk '{ print "skin " $6 "C, free " $8 " MB" }')"
+        stop_all
+        return 0
+    fi
+    return 1
+}
+
 in_front() {
     $S shell "dumpsys activity activities | grep -m1 topResumedActivity" 2>/dev/null | grep -q "$PKG"
+}
+
+skin_temp() {
+    $S shell 'dumpsys thermalservice | sed -n "/Current temperatures from HAL/,/Current cooling/p" | grep -o "mValue=[0-9.]*, mType=3,"' \
+        | tr '=,' '  ' | awk '{ printf "%d", $2 }'
 }
 
 cpu_temp() {
@@ -109,9 +133,14 @@ $S shell "run-as $PKG rm -f '$GAME_LOG'" >/dev/null 2>&1
 if [ -n "$PREPARE" ]; then
     $S shell "run-as $PKG sh -c \"$PREPARE\"" >/dev/null 2>&1 || log "prepare failed"
 fi
-log "cooling down to ${COOL_C}C"
+# Start every run alike: cool CPU *and* skin (the skin cools much slower), and other
+# apps' background processes closed, so memory is the same from run to run.
+log "cooling down to CPU ${COOL_C}C / skin ${COOL_SKIN_C}C"
 waited=0
-while [ "$(cpu_temp)" -gt "$COOL_C" ] && [ "$waited" -lt 600 ]; do sleep 10; waited=$((waited + 10)); done
+while { [ "$(cpu_temp)" -gt "$COOL_C" ] || [ "$(skin_temp)" -gt "$COOL_SKIN_C" ]; } && [ "$waited" -lt 900 ]; do
+    sleep 10; waited=$((waited + 10))
+done
+$S shell am kill-all >/dev/null 2>&1
 start_temp=$(cpu_temp)
 
 APP_UID=$($S shell pm list packages -U $PKG | sed -n 's/.*uid://p' | tr -d '\r')
@@ -144,6 +173,7 @@ while :; do
         [ "$ready" = 1 ] && break
     fi
     alive=$(tail -1 "$RAW" | awk '{print $9}')
+    if unsafe; then break; fi
     # Android cuts the network of background apps, so Steam cannot sign in and the
     # game never starts: stop at once instead of waiting out the timeout.
     if in_front; then away=0; else away=$((away + 1)); fi
@@ -178,10 +208,11 @@ mark=$(wc -l < "$RAW")
 if [ "$ready" = 1 ]; then
     log "measuring ${SECONDS_RUN}s"
     half=$((SECONDS_RUN / 2))
-    sleep "$half"
+    waited=0
+    while [ "$waited" -lt "$half" ]; do sleep 5; waited=$((waited + 5)); unsafe && break; done
     # Who burns the CPU: processes, then the game's busiest threads.
     $S shell "top -b -n 1 -d 2 -m 12 -o PID,%CPU,RES,NAME,ARGS | cut -c1-160; P=\$(pidof ck3 | cut -d' ' -f1); [ -n \"\$P\" ] && top -H -b -n 1 -d 2 -m 15 -p \$P -o TID,%CPU,NAME" > "${RAW%.log}.top" 2>/dev/null
-    sleep $((SECONDS_RUN - half))
+    while [ "$waited" -lt "$SECONDS_RUN" ]; do sleep 5; waited=$((waited + 5)); unsafe && break; done
     # Proof of what was measured: the screen as the player saw it.
     $S exec-out screencap -p > "${RAW%.log}.png" 2>/dev/null
 fi

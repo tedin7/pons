@@ -57,9 +57,8 @@ static struct bind binds[MAX_BINDS];
 static int nbinds;
 static uid_t host_uid = (uid_t)-1;
 static gid_t host_gid = (gid_t)-1;
-/* Descriptors we opened: proot traces close() too, so we close those ourselves.
- * We also keep their guest path, so calls relative to a directory we opened
- * (openat(dirfd, "name")) need no proot stop either. */
+/* Descriptors we opened, with their guest path: calls relative to a directory we
+ * opened (openat(dirfd, "name")) need no proot stop, and fstat knows them. */
 #define MAX_FAST_FD 65536
 static unsigned char fast_fds[MAX_FAST_FD / 8];
 static char *fd_paths[MAX_FAST_FD];
@@ -432,10 +431,14 @@ DEFINE_OPENAT(openat)
 DEFINE_OPENAT(openat64)
 
 /* Fortified variants (_FORTIFY_SOURCE builds call these). */
+/*
+ * Closes always go through proot: closing a file behind its back makes a later
+ * rename(2) of that file fail with ENOENT (create, close, rename is how Mesa
+ * publishes its present file, so no game frame ever reached the screen).
+ */
 int close(int fd)
 {
-    if (forget_fd(fd))
-        return (int)syscall(SYS_close, fd, 0, 0, 0, 0, PROOT_FASTPATH_MAGIC);
+    forget_fd(fd);
     REAL(close);
     return real_close(fd);
 }
@@ -692,7 +695,7 @@ DIR *opendir(const char *path)
         if (pd == MAP_FAILED)
             pd = NULL;
         if (!pd) {
-            syscall(SYS_close, fd, 0, 0, 0, 0, PROOT_FASTPATH_MAGIC);
+            close(fd);
             errno = ENOMEM;
             return NULL;
         }
@@ -756,7 +759,8 @@ int closedir(DIR *d)
     struct pons_dir *pd = as_pons_dir(d);
     if (pd) {
         forget_fd(pd->fd);
-        int r = (int)syscall(SYS_close, pd->fd, 0, 0, 0, 0, PROOT_FASTPATH_MAGIC);
+        REAL(close);
+        int r = real_close(pd->fd);
         pd->magic = 0;
         munmap(pd, sizeof *pd);
         return r;
@@ -869,7 +873,7 @@ int statvfs(const char *path, struct statvfs *buf)
             return -1;
         int r = fstatvfs(fd, buf);
         int saved = errno;
-        syscall(SYS_close, fd, 0, 0, 0, 0, PROOT_FASTPATH_MAGIC);
+        close(fd);
         errno = saved;
         return r;
     }

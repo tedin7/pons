@@ -46,6 +46,7 @@ object LinuxSession {
     /** Set by [stop]: errors after it are just the program being torn down. */
     @Volatile private var stopped = false
     @Volatile private var flushFile: File? = null
+    @Volatile private var memory: MemoryGuard? = null
 
     fun log(): List<String> = synchronized(logLines) { logLines.toList() }
 
@@ -60,8 +61,10 @@ object LinuxSession {
         this.program = program
         val paths = LinuxPaths(context)
         flushFile = paths.dynacacheFlush
+        val guard = MemoryGuard(context, ::emit).also { memory = it }
         try {
             installMissing(context, paths, program)
+            guard.makeRoom()
             startScreen(paths, DisplaySettings(context).resolution)
             startInput(paths)
             startAudioAndBus(paths)
@@ -69,6 +72,7 @@ object LinuxSession {
             programStartedAt = android.os.SystemClock.uptimeMillis()
             emit("▶ $program")
             val payload = launch(paths, program, "program")
+            guard.watch { stop() }
             val code = payload.waitFor()
             emit("■ uscito con codice $code")
         } catch (e: Exception) {
@@ -82,6 +86,8 @@ object LinuxSession {
     /** Safe from any thread; makes a blocked [start] return. */
     fun stop() {
         stopped = true
+        memory?.stop()
+        memory = null
         input?.close()
         input = null
         audio?.stop()
