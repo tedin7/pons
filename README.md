@@ -129,6 +129,7 @@ every second on the device.
 | Box64 vs native, integer / pathfinding / matrix workloads | 72–97 % |
 | Box64 vs native, math library calls | 9 % (each native call costs ~10 ns of bridge; see below) |
 | Translation inflation (arm64 instructions via Box64 / native), upstream → Pons patches 0005-0007 | matrix 1.98 → **1.50**, pathfinding 1.64 → 1.60, economy 0.89 → 0.88 (qemu instruction count) |
+| Box64 before → after patches 0005-0007, on the tablet (median of 7 interleaved runs, cores 6-7) | matrix 22.6 → **20.1 ms (−11 %)**, pathfinding 116.8 → **104.6 ms (−10 %)**, economy 62.9 → **54.9 ms (−13 %)**, libm 248 → 251 ms (unchanged) |
 | int→double conversion loop, Box64 upstream → patched | 16.9 → 5.9 ns |
 
 **Crusader Kings III** (x86_64 Linux build, 1600×1132, 30 fps cap):
