@@ -34,7 +34,7 @@ class MemoryGuard(private val context: Context, private val emit: (String) -> Un
             .forEach { runCatching { am.killBackgroundProcesses(it) } }
         val after = available(am)
         Log.i(TAG, "Memory: ${before / MB} MB free before closing background apps, ${after / MB} MB after")
-        emit("Memoria libera: ${after / MB} MB")
+        emit("Free memory: ${after / MB} MB")
     }
 
     fun watch(onTooLow: () -> Unit) {
@@ -62,12 +62,12 @@ class MemoryGuard(private val context: Context, private val emit: (String) -> Un
             val free = available(am)
             if (free < WARN_BYTES && !warned) {
                 warned = true
-                emit("Attenzione: memoria quasi finita (${free / MB} MB). Chiudi le altre app.")
+                emit("Warning: memory almost full (${free / MB} MB). Close other apps.")
                 Log.w(TAG, "Memory low: ${free / MB} MB")
             }
             low = if (free < STOP_BYTES) low + 1 else 0
             if (low >= STOP_CHECKS) {
-                emit("Memoria finita (${free / MB} MB): chiudo il gioco per non bloccare il tablet.")
+                emit("Out of memory (${free / MB} MB): stopping the game so the tablet does not freeze.")
                 Log.w(TAG, "Memory exhausted: ${free / MB} MB, stopping the session")
                 running = false
                 onTooLow()

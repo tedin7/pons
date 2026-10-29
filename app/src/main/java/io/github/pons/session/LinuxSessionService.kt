@@ -50,10 +50,10 @@ class LinuxSessionService : Service() {
     private fun notification(program: String): Notification {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL, "Linux in esecuzione", NotificationManager.IMPORTANCE_LOW))
+            NotificationChannel(CHANNEL, "Linux running", NotificationManager.IMPORTANCE_LOW))
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle("Pons: Linux acceso")
+            .setContentTitle("Pons: Linux is running")
             .setContentText(program.take(60))
             .setOngoing(true)
             .build()

@@ -74,10 +74,10 @@ object LinuxSession {
             val payload = launch(paths, program, "program")
             guard.watch { stop() }
             val code = payload.waitFor()
-            emit("■ uscito con codice $code")
+            emit("■ exited with code $code")
         } catch (e: Exception) {
             Log.e(TAG, "Session failed", e)
-            if (!stopped) emit("ERRORE: ${e.message ?: e.javaClass.simpleName}")
+            if (!stopped) emit("ERROR: ${e.message ?: e.javaClass.simpleName}")
         } finally {
             stop()
         }
@@ -119,12 +119,12 @@ object LinuxSession {
     private fun installMissing(context: Context, paths: LinuxPaths, program: String) {
         val installer = ComponentInstaller(context, paths)
         installer.missing(Components.ALL).forEach { component ->
-            emit("Installo ${component.id}…")
+            emit("Installing ${component.id}…")
             installer.install(component) { status -> emit("  $status") }
         }
         val packages = PackageSetup(context, paths)
         PackageSetup.groupsFor(program).filterNot(packages::isDone).forEach { group ->
-            emit("Installo i pacchetti Linux: ${group.name.lowercase()} (solo la prima volta)…")
+            emit("Installing Linux packages: ${group.name.lowercase()} (first time only)…")
             packages.install(group) { line -> emit("  $line") }
         }
     }
@@ -139,7 +139,7 @@ object LinuxSession {
                 "-fbdir /tmp -nolisten tcp -ac +extension GLX", "xvfb")
         val deadline = System.currentTimeMillis() + 15_000
         while (!File(paths.tmp, ".X11-unix/X0").exists()) {
-            check(System.currentTimeMillis() < deadline) { "Lo schermo Linux non è partito" }
+            check(System.currentTimeMillis() < deadline) { "The Linux screen did not start" }
             Thread.sleep(100)
         }
     }

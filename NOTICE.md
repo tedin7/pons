@@ -10,6 +10,7 @@
 | Box64 | downloaded component | MIT |
 | Apache Commons Compress | app library | Apache-2.0 |
 | XZ for Java | app library | 0BSD |
+| Material Icons (`cloud_download`) | `app/src/main/res/drawable/ic_download.xml` | Apache-2.0 |
 
 Source for each component is linked from its build script in `tools/`.
 The Steam client is downloaded by the user's device from Valve and is covered by the

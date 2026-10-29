@@ -13,7 +13,9 @@ class DisplaySettings(context: Context) {
     private val prefs = context.getSharedPreferences("display", Context.MODE_PRIVATE)
 
     var resolution: Resolution
-        get() = PRESETS.firstOrNull { it.label == prefs.getString(KEY_RESOLUTION, null) } ?: DEFAULT
+        // Matched by size, so a saved choice survives renamed labels.
+        get() = prefs.getString(KEY_RESOLUTION, null)
+            ?.let { saved -> PRESETS.firstOrNull { saved.endsWith("${it.width}×${it.height}") } } ?: DEFAULT
         set(value) = prefs.edit().putString(KEY_RESOLUTION, value.label).apply()
 
     /** 0 = off, 1 = strong. */
@@ -40,10 +42,10 @@ class DisplaySettings(context: Context) {
 
         // Even sizes close to the tablet's 1.41:1 panel.
         val PRESETS = listOf(
-            Resolution("Veloce 1280×904", 1280, 904),
-            Resolution("Bilanciata 1600×1132", 1600, 1132),
-            Resolution("Qualità 1920×1358", 1920, 1358),
-            Resolution("Massima 2400×1696", 2400, 1696),
+            Resolution("Fast 1280×904", 1280, 904),
+            Resolution("Balanced 1600×1132", 1600, 1132),
+            Resolution("Quality 1920×1358", 1920, 1358),
+            Resolution("Maximum 2400×1696", 2400, 1696),
         )
         val DEFAULT = PRESETS[1]
     }

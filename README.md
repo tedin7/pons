@@ -14,6 +14,17 @@ Steam client, so your library, saves and DRM work the way they do on a Linux PC.
 The goal is bigger than one device or one game: make ARM a first-class place to play PC
 games, with every layer measured and every improvement published.
 
+## Install
+
+1. Download `pons-<version>.apk` from the latest
+   [release](https://github.com/tedin7/pons/releases/latest) and install it (allow
+   installs from your browser or file manager when Android asks).
+2. Open Pons and tap **Battery** if it says *Restricted*: games need the app to keep
+   running in the background.
+3. Tap **Open** on Steam, sign in and install a game that has a Linux version.
+4. Tap **Play**. The first start downloads about 60 MB of components (Debian, Mesa,
+   Box64) and Linux packages.
+
 ## What is new here
 
 Pons stands on proot, Box64, Mesa and Debian. On top of them it adds:
@@ -201,12 +212,16 @@ Everything builds on an x86_64 Linux machine with Docker, JDK 17 and the Android
 | Box64 | `tools/box64/build.sh <tag>` (in its Docker image) | `box64-<tag>-pons.tar.xz` |
 | proot (patched) | `tools/proot/build.sh` (NDK) | `libproot.so`, `libproot-loader.so` |
 | helpers, benchmarks, profiles | `tools/input/build.sh <version>` | `pons-tools-<v>.tar.xz` |
-| app | `gradle assembleDebug` | APK |
+| app | `gradle assembleDebug`, or `assembleRelease` (signed when `local.properties` has `pons.signing.storeFile` and `pons.signing.passwordFile`) | APK |
 
 Components are downloaded by the app on first start and checked with SHA-256
 (`app/src/main/java/io/github/pons/linux/Component.kt`). Release builds fetch them from
 this repository's releases; a debug build can use a local mirror with
 `pons.devMirror=http://<host>:<port>/` in `local.properties`.
+
+A new component version must also be uploaded to the `components` release, or the
+published app cannot download it: `tools/dev/publish-components.sh <dir>` uploads every
+file `Component.kt` pins that the release lacks, after checking its SHA-256.
 
 `tools/dev/pp-run.sh` runs a command inside the app's Debian over adb (debug builds only).
 

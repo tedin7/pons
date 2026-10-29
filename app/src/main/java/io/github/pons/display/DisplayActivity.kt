@@ -53,7 +53,7 @@ class DisplayActivity : Activity() {
             status.visibility = if (waiting) View.VISIBLE else View.GONE
             if (waiting) {
                 status.text = LinuxSession.log().takeLast(STATUS_LINES).joinToString("\n")
-                    .ifEmpty { "Avvio di Linux…" }
+                    .ifEmpty { "Starting Linux…" }
             }
             status.postDelayed(this, STATUS_REFRESH_MS)
         }

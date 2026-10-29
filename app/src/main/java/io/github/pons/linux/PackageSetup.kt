@@ -52,7 +52,7 @@ class PackageSetup(context: Context, private val paths: LinuxPaths) {
         val process = ProotCommand.build(paths, script).start()
         process.inputStream.bufferedReader().useLines { lines -> lines.forEach(onLine) }
         val code = process.waitFor()
-        if (code != 0) throw IOException("Installazione pacchetti fallita (codice $code)")
+        if (code != 0) throw IOException("Package installation failed (exit code $code)")
         marker(group).writeText(group.version)
     }
 

@@ -8,10 +8,15 @@ plugins {
 // Components come from the GitHub release; a debug build can use a local mirror
 // instead: put pons.devMirror=http://<host>:<port>/ in local.properties (not committed).
 val releaseComponents = "https://github.com/tedin7/pons/releases/download/components/"
-val devMirror: String = Properties().run {
+val localProps = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
-    getProperty("pons.devMirror") ?: releaseComponents
 }
+val devMirror: String = localProps.getProperty("pons.devMirror") ?: releaseComponents
+
+// Release signing, only where the key lives (local.properties, not committed):
+// pons.signing.storeFile=<keystore>, pons.signing.passwordFile=<file holding the password>.
+val signingStore = localProps.getProperty("pons.signing.storeFile")?.let(::file)
+val signingPassword = localProps.getProperty("pons.signing.passwordFile")?.let { file(it).readText().trim() }
 
 android {
     namespace = "io.github.pons"
@@ -28,6 +33,17 @@ android {
 
     buildFeatures { buildConfig = true }
 
+    signingConfigs {
+        if (signingStore != null && signingPassword != null) {
+            create("release") {
+                storeFile = signingStore
+                storePassword = signingPassword
+                keyAlias = "pons"
+                keyPassword = signingPassword
+            }
+        }
+    }
+
     ndkVersion = "27.2.12479018"
     externalNativeBuild {
         cmake {
@@ -42,6 +58,7 @@ android {
         }
         release {
             buildConfigField("String", "COMPONENTS_BASE_URL", "\"$releaseComponents\"")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

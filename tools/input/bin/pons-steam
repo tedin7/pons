@@ -30,7 +30,7 @@ fix_steam_tree() {
 }
 
 if [ ! -f "$STEAM/steamrtarm64/steam" ]; then
-    echo "Pons: scarico il client Steam ARM (prima volta)…"
+    echo "Pons: downloading the ARM Steam client (first time)…"
     mkdir -p "$STEAM/package" "$STEAM/steamrtarm64"
     curl -fsSL "$CDN/$MANIFEST" -o "$STEAM/package/$MANIFEST.manifest"
     # Pick the "file" and "sha2" lines of the bins_linuxarm64_linuxarm64 block.
@@ -40,7 +40,7 @@ if [ ! -f "$STEAM/steamrtarm64/steam" ]; then
         inside && /"sha2"/ { gsub(/"/, "", $2); sha = $2 }
         inside && /^\t}/ { print file, sha; exit }
     ' "$STEAM/package/$MANIFEST.manifest")
-    [ $# -eq 2 ] || { echo "Pons: manifest Steam non riconosciuto" >&2; exit 1; }
+    [ $# -eq 2 ] || { echo "Pons: unrecognised Steam manifest" >&2; exit 1; }
     curl -fsSL "$CDN/$1" -o /tmp/steam-bins.zip
     echo "$2  /tmp/steam-bins.zip" | sha256sum -c - >/dev/null
     unzip -oq /tmp/steam-bins.zip -d "$STEAM"

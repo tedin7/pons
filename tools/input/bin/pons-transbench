@@ -28,12 +28,12 @@ run_case() {  # name, env settings...
             rm -f "$TMP/$name.$attempt"
         fi
     done
-    [ "$ok" -gt 0 ] || { echo "  $name: si è bloccato, scartato"; return; }
+    [ "$ok" -gt 0 ] || { echo "  $name: hung, discarded"; return; }
     grep checksum "$TMP/$name.err" > "$TMP/$name.sum" || true
     if [ "$name" = default ]; then
         cp "$TMP/$name.sum" "$TMP/reference.sum"
     elif ! cmp -s "$TMP/$name.sum" "$TMP/reference.sum"; then
-        echo "  $name: risultati diversi, scartato"; return
+        echo "  $name: different results, discarded"; return
     fi
     best_of "$TMP"/"$name".[123] > "$TMP/$name.best"
     s=$(score "$TMP/$name.best")
@@ -41,12 +41,12 @@ run_case() {  # name, env settings...
     echo "$s $name $*" >> "$TMP/results"
 }
 
-echo "== Nativo ARM (riferimento = 100%)"
+echo "== Native ARM (reference = 100%)"
 for i in 1 2 3; do "$BENCH/transbench-arm64" > "$TMP/native.$i" 2>/dev/null; done
 best_of "$TMP"/native.[123] > "$TMP/native.best"
 echo "  $(tr '\n' ' ' < "$TMP/native.best")"
 
-echo "== x86 tradotto da Box64"
+echo "== x86 translated by Box64"
 # Translation cache stays on, as in real games; three runs each, best kept (the device
 # is noisy: thermal state and background apps move single runs by 2x).
 export BOX64_LOG=0 BOX64_NOBANNER=1
@@ -63,10 +63,10 @@ WINNER=$(sort -rn "$TMP/results" | head -1)
 BASE=$(awk '$2 == "default" {print $1}' "$TMP/results")
 # Runs vary by a few percent; only move away from the defaults for a clear win.
 if [ -z "$BASE" ] || [ "${WINNER%% *}" -lt $((BASE + 3)) ]; then
-    echo "== Migliore: impostazioni standard (nessuna vince di almeno 3 punti)"
+    echo "== Best: default settings (none wins by at least 3 points)"
     : > "$OUT/box64-tuned.env"
 else
-    echo "== Migliore: $WINNER"
+    echo "== Best: $WINNER"
     echo "$WINNER" | cut -d' ' -f3- | tr ' ' '\n' | grep = | sed 's/^/export /' > "$OUT/box64-tuned.env" || true
 fi
-echo "  salvato in $OUT/box64-tuned.env"
+echo "  saved to $OUT/box64-tuned.env"
