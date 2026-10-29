@@ -69,6 +69,66 @@ object LinuxSession {
 
     fun removeListener(listener: (String) -> Unit) = listeners.remove(listener)
 
+    /**
+     * Started by the launcher when Pons opens, so Steam is already signed in when Play
+     * is pressed (Steam's own start takes ~20 s). Games then join this session.
+     */
+    const val STEAM_BACKGROUND = "pons-steam -silent"
+
+    /** False once the background Steam process has exited (it is not restarted). */
+    @Volatile private var steamAlive = false
+
+    /** Which output pump may update the loading screen's detail line. */
+    @Volatile private var stageSource = "program"
+
+    /**
+     * Claims the running background-Steam session for [next], atomically: true only if
+     * Steam is alive and idle and [next] needs nothing more installed. A second Play
+     * (or a Stop) racing this call sees the claim and gets false.
+     */
+    @Synchronized
+    fun claim(context: Context, next: String): Boolean {
+        if (!running || !steamAlive || program != STEAM_BACKGROUND || next == STEAM_BACKGROUND) return false
+        val packages = PackageSetup(context, LinuxPaths(context))
+        if (!PackageSetup.groupsFor(next).all(packages::isDone)) return false
+        program = next
+        programStartedAt = android.os.SystemClock.uptimeMillis()
+        stage = Stage("")
+        stageSource = "game"
+        return true
+    }
+
+    /**
+     * Runs [next], already [claim]ed, in the running session; blocking until it exits.
+     * Steam keeps running afterwards, so the next game starts just as fast; if Steam
+     * died meanwhile, the session ends with the game.
+     */
+    fun join(context: Context, next: String) {
+        emit("▶ $next")
+        try {
+            if (running) {
+                val code = launch(LinuxPaths(context), next, "game").waitFor()
+                emit("■ exited with code $code")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Joined program failed", e)
+            if (!stopped) emit("ERROR: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            if (!release(next)) stop()
+        }
+    }
+
+    /** Back to background Steam after [next]; false if Steam is gone (end the session). */
+    @Synchronized
+    private fun release(next: String): Boolean {
+        if (program != next || !running) return true
+        stageSource = "program"
+        programStartedAt = 0L
+        if (!steamAlive) return false
+        program = STEAM_BACKGROUND
+        return true
+    }
+
     /** Blocking until the program exits: call from a background thread. */
     fun start(context: Context, program: String) {
         stop()
@@ -89,10 +149,13 @@ object LinuxSession {
             programStartedAt = android.os.SystemClock.uptimeMillis()
             stage = Stage("")
             emit("▶ $program")
+            stageSource = "program"
+            steamAlive = program == STEAM_BACKGROUND
             val payload = launch(paths, program, "program")
             guard.watch { stop() }
             stopDnsFollow = NetworkConfig.follow(context, paths)
             val code = payload.waitFor()
+            steamAlive = false
             emit("■ exited with code $code")
         } catch (e: Exception) {
             Log.e(TAG, "Session failed", e)
@@ -101,13 +164,17 @@ object LinuxSession {
                 stage = Stage("Something went wrong", e.message ?: e.javaClass.simpleName, failed = true)
             }
         } finally {
-            stop()
+            // A game that joined background Steam owns the session now; it ends with
+            // the session's Stop, not when this (Steam) process exits.
+            if (this.program == program || this.program == STEAM_BACKGROUND || this.program == null) stop()
         }
     }
 
     /** Safe from any thread; makes a blocked [start] return. */
     fun stop() {
         stopped = true
+        steamAlive = false
+        stageSource = "program"
         memory?.stop()
         stopDnsFollow?.invoke()
         stopDnsFollow = null
@@ -236,7 +303,7 @@ object LinuxSession {
                     lines.forEach { line ->
                         emit("[$name] $line")
                         // The program's own messages ("Waiting for your Steam account…") say how far it got.
-                        if (name == "program" && stage.title.isEmpty() && line.isNotBlank()) stage = programStage(line)
+                        if (name == stageSource && stage.title.isEmpty() && line.isNotBlank()) stage = programStage(line)
                     }
                 }
             }

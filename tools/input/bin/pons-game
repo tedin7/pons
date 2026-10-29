@@ -28,7 +28,25 @@ else
     [ -x "$GAME/$EXEC" ] || { echo "$NAME is not installed: install it from Steam." >&2; exit 1; }
 fi
 
-if [ -n "$STEAM_APPID" ]; then
+# Steam already running and signed in (started ahead by the app, or by an earlier
+# game in this session): its last connection state line says "Logged On".
+# A "Logged On" left in the log by an earlier run does not count: the log must have
+# been written after this steam process started.
+steam_signed_in() {
+    log="$STEAM/logs/connection_log.txt"
+    for f in /proc/[0-9]*/comm; do
+        [ "$(cat "$f" 2>/dev/null)" = steam ] || continue
+        [ "$(stat -c %Y "$log" 2>/dev/null || echo 0)" -ge "$(stat -c %Y "${f%/comm}")" ] || return 1
+        tail -n 200 "$log" | grep -o '\] \[[A-Z][A-Za-z ]*,' | tail -n 1 | grep -q 'Logged On'
+        return
+    done
+    return 1
+}
+
+if [ -n "$STEAM_APPID" ] && steam_signed_in; then
+    echo "Steam is already signed in."
+    export SteamAppId="$STEAM_APPID" SteamGameId="$STEAM_APPID"
+elif [ -n "$STEAM_APPID" ]; then
     LOG="$STEAM/logs/connection_log.txt"
     echo "Starting Steam…"
     start_lines=$(wc -l < "$LOG" 2>/dev/null || echo 0)

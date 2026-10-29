@@ -37,6 +37,8 @@ interface LauncherActions {
     fun stop()
     fun nextResolution(): String
     fun unrestrictBattery()
+    /** Flips "start Steam when Pons opens"; returns the new value. */
+    fun toggleSteamAhead(): Boolean
 }
 
 /**
@@ -64,6 +66,7 @@ class LauncherView(
     private val resolutionValue = context.text("", 16f, Look.TEXT, bold = true)
     private val batteryValue = context.text("", 16f, Look.TEXT, bold = true)
     private val batteryChevron = context.text("›", 26f, Look.MUTED)
+    private val steamAheadValue = context.text("", 16f, Look.TEXT, bold = true)
     private val logText = context.text("", 12f, Look.MUTED).apply {
         typeface = Typeface.MONOSPACE
         setLineSpacing(0f, 1.15f)
@@ -129,11 +132,18 @@ class LauncherView(
         refreshCards()
     }
 
-    /** Running program (null = idle), battery state, current resolution label. */
-    fun show(running: String?, batteryFree: Boolean, resolution: String) {
+    /**
+     * Running program (null = idle), battery state, current resolution label, and
+     * whether Steam starts ahead ([steamReady]: it is running and waiting for a game).
+     */
+    fun show(running: String?, batteryFree: Boolean, resolution: String, steamAhead: Boolean = false, steamReady: Boolean = false) {
         this.running = running
         val name = (listOf(steam) + games + tools).firstOrNull { it.program == running }?.title
-        statusText.text = if (name != null) "$name is running" else "Ready"
+        statusText.text = when {
+            name != null -> "$name is running"
+            steamReady -> "Ready · Steam signed in"
+            else -> "Ready"
+        }
         statusText.setTextColor(if (name != null) Look.TEXT else Look.MUTED)
         (statusDot.background as GradientDrawable).setColor(if (name != null) Look.OK else Look.MUTED)
         stopButton.visibility = if (running != null) VISIBLE else GONE
@@ -143,6 +153,7 @@ class LauncherView(
         batteryValue.setTextColor(if (batteryFree) Look.OK else Look.ACCENT)
         batteryChevron.visibility = if (batteryFree) INVISIBLE else VISIBLE
         resolutionValue.text = resolution
+        steamAheadValue.text = if (steamAhead) "On: games start faster" else "Off"
     }
 
     /** A banner above the games: "Pons [version] is available", with a download button. */
@@ -305,6 +316,10 @@ class LauncherView(
         })
         addView(space(10))
         addView(listRow("Battery", batteryValue, batteryChevron) { actions.unrestrictBattery() })
+        addView(space(10))
+        addView(listRow("Start Steam when Pons opens", steamAheadValue, context.text("›", 26f, Look.MUTED)) {
+            actions.toggleSteamAhead()
+        })
     }
 
     private fun toolsColumn() = LinearLayout(context).apply {

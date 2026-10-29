@@ -48,6 +48,7 @@ class LauncherShot {
         override fun stop() {}
         override fun nextResolution() = ""
         override fun unrestrictBattery() {}
+        override fun toggleSteamAhead() = true
     }
 
     @Test fun idle() {

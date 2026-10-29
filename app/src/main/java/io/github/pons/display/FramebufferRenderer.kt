@@ -65,6 +65,7 @@ class FramebufferRenderer(
         .apply { asFloatBuffer().put(QUAD) }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        AhbFrames.forgetTextures()
         program = linkProgram(VERTEX_SHADER, FRAGMENT_SHADER)
         val ids = IntArray(1)
         GLES20.glGenTextures(1, ids, 0)

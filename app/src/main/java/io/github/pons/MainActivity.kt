@@ -8,11 +8,14 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.format.DateUtils
+import java.io.File
 import android.view.WindowInsets
 import io.github.pons.display.DisplayActivity
 import io.github.pons.linux.Components
+import io.github.pons.linux.ComponentInstaller
 import io.github.pons.linux.GameLibrary
 import io.github.pons.linux.LinuxPaths
+import io.github.pons.linux.PackageSetup
 import io.github.pons.session.DisplaySettings
 import io.github.pons.session.LinuxSession
 import io.github.pons.session.LinuxSessionService
@@ -71,6 +74,20 @@ class MainActivity : Activity(), LauncherActions {
         refresh()
         LinuxSession.addListener(listener)
         loadLibrary()
+        startSteamAhead()
+    }
+
+    /**
+     * Steam takes ~20 s to start and sign in; start it in the background as soon as
+     * Pons opens, once it has been set up and signed in before, so Play is quick.
+     */
+    private fun startSteamAhead() {
+        if (!settings.steamAhead || stoppedByUser || LinuxSessionService.busy() || LinuxSession.program != null) return
+        val paths = LinuxPaths(this)
+        val signedInBefore = File(paths.rootfs, "root/.local/share/Steam/config/loginusers.vdf").length() > 0
+        val ready = ComponentInstaller(this, paths).missing(Components.ALL).isEmpty() &&
+            PackageSetup.groupsFor(LinuxSession.STEAM_BACKGROUND).all(PackageSetup(this, paths)::isDone)
+        if (signedInBefore && ready) LinuxSessionService.start(this, LinuxSession.STEAM_BACKGROUND)
     }
 
     /** Reads the installed Steam games (and decodes their artwork) off the main thread. */
@@ -97,13 +114,17 @@ class MainActivity : Activity(), LauncherActions {
 
     private fun refresh() {
         val power = getSystemService(PowerManager::class.java)
-        screen.show(LinuxSession.program.takeIf { LinuxSession.running },
-            power.isIgnoringBatteryOptimizations(packageName), settings.resolution.label)
+        val program = LinuxSession.program.takeIf { LinuxSession.running }
+        val background = program == LinuxSession.STEAM_BACKGROUND
+        screen.show(program.takeUnless { background },
+            power.isIgnoringBatteryOptimizations(packageName), settings.resolution.label,
+            settings.steamAhead, steamReady = background)
     }
 
     override fun run(program: String) {
         // Pressing the same program again just brings its screen back: restarting
         // Steam would throw away a login in progress.
+        stoppedByUser = false
         if (LinuxSession.program != program) {
             LinuxSession.stage = LinuxSession.Stage("Starting Linux")
             LinuxSessionService.start(this, program)
@@ -125,11 +146,20 @@ class MainActivity : Activity(), LauncherActions {
     override fun openScreen() = openDisplay(LinuxSession.program)
 
     override fun stop() {
+        // Stop means stop: do not bring Steam back on the next return to the launcher.
+        stoppedByUser = true
         LinuxSessionService.stop(this)
         screen.postDelayed(::refresh, 500)
     }
 
     override fun nextResolution(): String = settings.nextResolution().label
+
+    override fun toggleSteamAhead(): Boolean {
+        settings.steamAhead = !settings.steamAhead
+        if (!settings.steamAhead && LinuxSession.program == LinuxSession.STEAM_BACKGROUND) LinuxSessionService.stop(this)
+        refresh()
+        return settings.steamAhead
+    }
 
     /** The Linux screen, with the program's name and artwork for its loading screen. */
     private fun openDisplay(program: String?) {
@@ -140,6 +170,8 @@ class MainActivity : Activity(), LauncherActions {
     }
 
     companion object {
+        /** Set by Stop, cleared by the next Play: Steam is not started ahead meanwhile. */
+        private var stoppedByUser = false
         private const val EXTRA_PROGRAM = "program"
         private val STEAM =
             Entry("Steam", "Sign in, download and update games", "pons-steam", R.drawable.ic_download, 0xFF7FA7E8.toInt(), action = "Open")

@@ -62,6 +62,20 @@ object AhbFrames {
         return set.textures[index]
     }
 
+    /**
+     * GL thread, first frame of a new EGL context. Leaving the game screen and coming
+     * back recreates it: the old context's textures are gone, so the cached ids would
+     * draw nothing (a black screen while the game runs). Bind the buffers again on next use.
+     */
+    fun forgetTextures() {
+        val set = current ?: return
+        for (i in 0 until COUNT) {
+            if (set.images[i] != 0L) nativeRelease(0, set.images[i])
+            set.images[i] = 0
+            set.textures[i] = 0
+        }
+    }
+
     /** GL thread: frees textures and buffers of sets no longer in use. */
     fun releaseRetired() {
         while (true) {

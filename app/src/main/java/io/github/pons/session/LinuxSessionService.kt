@@ -19,7 +19,6 @@ class LinuxSessionService : Service() {
 
     /** Sessions run one at a time; a new request first stops the running one. */
     private val sessions = Executors.newSingleThreadExecutor { Thread(it, "pons-session") }
-    private val pending = AtomicInteger()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -32,6 +31,17 @@ class LinuxSessionService : Service() {
         val program = intent?.getStringExtra(EXTRA_PROGRAM) ?: return START_NOT_STICKY
         startForeground(NOTIFICATION_ID, notification(program),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        if (LinuxSession.claim(applicationContext, program)) {
+            // Background Steam is running: start the game inside it, on its own thread
+            // (the session thread is busy running Steam). Counted like a session, so
+            // Steam exiting does not stop the service under the game.
+            pending.incrementAndGet()
+            Thread({
+                LinuxSession.join(applicationContext, program)
+                if (pending.decrementAndGet() == 0) stopSelf()
+            }, "pons-join").start()
+            return START_NOT_STICKY
+        }
         LinuxSession.stop()
         pending.incrementAndGet()
         sessions.execute {
@@ -60,6 +70,12 @@ class LinuxSessionService : Service() {
     }
 
     companion object {
+        /** Sessions and joined games requested and not finished (busy even while starting). */
+        private val pending = AtomicInteger()
+
+        /** True from the moment a session is requested until everything has ended. */
+        fun busy(): Boolean = pending.get() > 0
+
         private const val CHANNEL = "session"
         private const val NOTIFICATION_ID = 1
         private const val EXTRA_PROGRAM = "program"
