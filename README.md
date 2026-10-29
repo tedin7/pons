@@ -29,7 +29,7 @@ Pons stands on proot, Box64, Mesa and Debian. On top of them it adds:
 | **Quiet Steam** | Steam's web helper (Chromium) is frozen while a game runs. | ~470 MB more free memory, 3 °C cooler under load |
 | **Kernel heap under proot** | proot patch 0004 (`PROOT_NO_HEAP`) leaves `brk` to the kernel instead of proot's emulated heap, which corrupted malloc after heap trims and stopped every `brk`. | Simulated game load: `brk` stops 1101 → 0, read phase 997 → 173 ms, no more malloc corruption |
 | **Thermal governor** | Polls Android's thermal headroom and lowers the frame cap (30 → 24 → 20) before the device throttles, ignoring the first 45 s of loading; Mesa re-reads the cap every frame. | CK3 at top speed for 3 min: 30 fps, skin 43 °C, Android thermal status 0 |
-| **GPU frame copy** | Imports the Android buffers into Vulkan and copies each frame on the GPU instead of a 7 MB CPU `memcpy` (on by default; `PONS_GPU_COPY=0` turns it off). | CK3 map: CPU max 80 → 51 °C, GPU 68 → 52 °C, skin 47 → 39 °C (one run each) |
+| **GPU frame copy** | Imports the Android buffers into Vulkan and copies each frame on the GPU instead of a 7 MB CPU `memcpy` (on by default; `PONS_GPU_COPY=0` turns it off). | CK3 map, 30 fps, no late frames in 3/3 runs; GPU max 60–62 °C and skin 43 °C, against 68 °C and 47 °C in the one CPU-copy run (a second CPU-copy run was stopped for low memory) |
 | **Hands-off benchmarks and profiler** | Profiles, a layer suite, a game benchmark and an automatic bottleneck profiler, all over adb, no touch input. | Every number in this file |
 
 ## How it works
