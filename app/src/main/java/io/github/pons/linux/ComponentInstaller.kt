@@ -36,7 +36,6 @@ class ComponentInstaller(private val context: Context, private val paths: LinuxP
         openSource(component, onStatus, onBytes).use { input ->
             TarXzExtractor.extract(input, destination) { n -> onStatus("${component.id}: $n file"); onFiles(n) }
         }
-        if (!component.intoRootfs) writeNetworkConfig()
         marker(component).writeText(component.version)
     }
 
@@ -86,13 +85,6 @@ class ComponentInstaller(private val context: Context, private val paths: LinuxP
             connection.disconnect()
         }
         if (!partial.renameTo(target)) throw IOException("Cannot save $target")
-    }
-
-    private fun writeNetworkConfig() {
-        val resolv = File(paths.rootfs, "etc/resolv.conf")
-        resolv.delete()
-        resolv.writeText("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
-        resolv.setReadable(true, false)
     }
 
     private fun marker(component: Component) = File(markerDir, component.id)

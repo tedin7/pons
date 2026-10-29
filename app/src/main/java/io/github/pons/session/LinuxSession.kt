@@ -6,6 +6,7 @@ import io.github.pons.display.InputBridge
 import io.github.pons.linux.ComponentInstaller
 import io.github.pons.linux.Components
 import io.github.pons.linux.LinuxPaths
+import io.github.pons.linux.NetworkConfig
 import io.github.pons.linux.PackageSetup
 import io.github.pons.linux.ProotCommand
 import java.io.File
@@ -150,6 +151,8 @@ object LinuxSession {
                 },
                 onFiles = { n -> stage = Stage(title, "Unpacking the $label · $n files") })
         }
+        // Before apt and the program: both look up names (see NetworkConfig).
+        NetworkConfig.write(context, paths)
         val packages = PackageSetup(context, paths)
         PackageSetup.groupsFor(program).filterNot(packages::isDone).forEach { group ->
             emit("Installing Linux packages: ${group.name.lowercase()} (first time only)…")
