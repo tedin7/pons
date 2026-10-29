@@ -151,7 +151,14 @@ started=$(date +%s)
 # Stream samples into the raw log for the whole run (readiness + measurement).
 $S shell "$SAMPLER" > "$RAW" 2>/dev/null &
 SAMPLER_PID=$!
-trap 'kill $SAMPLER_PID 2>/dev/null; stop_all' EXIT INT TERM
+# Memory profile every 15 s: per app process RSS split (anon/file/shmem) and swap
+# from /proc/<pid>/status, GPU memory per process from Android's gpu service.
+MEMPROF=""
+if [ "${PP_BENCH_MEMPROF:-1}" = 1 ]; then
+    $S shell 'U='"$APP_UID"'; while :; do T=$(date +%s); for d in /proc/[0-9]*; do [ "$(stat -c %u $d 2>/dev/null)" = "$U" ] || continue; awk -v t=$T -v p=${d#/proc/} "/^Name:/{n=\$2} /^VmRSS/{r=\$2} /^RssAnon/{a=\$2} /^RssFile/{f=\$2} /^RssShmem/{s=\$2} /^VmSwap/{w=\$2} END{if(r) print \"M\", t, p, n, r, a, f, s, w}" $d/status 2>/dev/null; done; dumpsys gpu --gpumem 2>/dev/null | sed "s/^/G $T /"; grep -E "MemAvailable|SwapFree" /proc/meminfo | sed "s/^/K $T /"; sleep 15; done' > "${RAW%.log}.mem" 2>/dev/null &
+    MEMPROF=$!
+fi
+trap 'kill $SAMPLER_PID $MEMPROF 2>/dev/null; stop_all' EXIT INT TERM
 
 # Ready = the game logged that it reached the map or menu (CK3 rewrites debug.log
 # on every start), then frames flow. Loading screens also present steady frames,
@@ -216,7 +223,7 @@ if [ "$ready" = 1 ]; then
     # Proof of what was measured: the screen as the player saw it.
     $S exec-out screencap -p > "${RAW%.log}.png" 2>/dev/null
 fi
-kill $SAMPLER_PID 2>/dev/null
+kill $SAMPLER_PID $MEMPROF 2>/dev/null
 trap - EXIT INT TERM
 stop_all
 
