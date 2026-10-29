@@ -2,6 +2,8 @@ package io.github.pons.linux
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
 import java.io.File
 import java.net.Inet4Address
 
@@ -34,4 +36,19 @@ object NetworkConfig {
     }.getOrDefault(emptyList())
 
     private const val MAX_SERVERS = 3
+
+    /**
+     * Rewrites resolv.conf whenever Android moves to another network (Wi-Fi to hotspot,
+     * a VPN coming up): the old network's DNS server stops answering. Returns the stop.
+     */
+    fun follow(context: Context, paths: LinuxPaths): () -> Unit {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java)
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+                runCatching { write(context, paths) }
+            }
+        }
+        connectivity.registerDefaultNetworkCallback(callback)
+        return { runCatching { connectivity.unregisterNetworkCallback(callback) } }
+    }
 }

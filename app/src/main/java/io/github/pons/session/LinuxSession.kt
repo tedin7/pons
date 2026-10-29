@@ -61,6 +61,7 @@ object LinuxSession {
     @Volatile private var stopped = false
     @Volatile private var flushFile: File? = null
     @Volatile private var memory: MemoryGuard? = null
+    @Volatile private var stopDnsFollow: (() -> Unit)? = null
 
     fun log(): List<String> = synchronized(logLines) { logLines.toList() }
 
@@ -90,6 +91,7 @@ object LinuxSession {
             emit("▶ $program")
             val payload = launch(paths, program, "program")
             guard.watch { stop() }
+            stopDnsFollow = NetworkConfig.follow(context, paths)
             val code = payload.waitFor()
             emit("■ exited with code $code")
         } catch (e: Exception) {
@@ -107,6 +109,8 @@ object LinuxSession {
     fun stop() {
         stopped = true
         memory?.stop()
+        stopDnsFollow?.invoke()
+        stopDnsFollow = null
         memory = null
         input?.close()
         input = null
