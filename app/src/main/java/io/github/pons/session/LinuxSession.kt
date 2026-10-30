@@ -140,6 +140,7 @@ object LinuxSession {
         try {
             stage = Stage("Starting Linux")
             installMissing(context, paths, program)
+            guard.makeRoom()
             stage = Stage("Starting the Linux screen")
             startScreen(paths, DisplaySettings(context).resolution)
             startInput(paths)

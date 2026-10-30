@@ -2,6 +2,8 @@ package io.github.pons.session
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.util.Log
 
 /**
@@ -11,10 +13,7 @@ import android.util.Log
  * (they belong to the app in front); instead it swaps to compressed memory until the
  * device stops responding — it happened twice in testing and needed a reboot.
  *
- * Other apps are left alone: Android's low-memory killer drops their cached processes
- * on its own, and closing them from here (killBackgroundProcesses on every app) made
- * ColorOS show "an attempt by a malicious app to damage the system has been stopped".
- *
+ * - [makeRoom] asks Android to drop other apps' background processes before a game.
  * - [watch] checks free memory every 2 s while a session runs: below [WARN_BYTES]
  *   it warns once, below [STOP_BYTES] for three checks in a row it stops the
  *   session, which loses unsaved progress but keeps the device usable.
@@ -23,6 +22,20 @@ class MemoryGuard(private val context: Context, private val emit: (String) -> Un
 
     @Volatile private var running = false
     private var thread: Thread? = null
+
+    fun makeRoom() {
+        val am = context.getSystemService(ActivityManager::class.java)
+        val before = available(am)
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        context.packageManager.queryIntentActivities(launcher, PackageManager.MATCH_ALL)
+            .map { it.activityInfo.packageName }
+            .distinct()
+            .filter { it != context.packageName && KEEP.none(it::startsWith) }
+            .forEach { runCatching { am.killBackgroundProcesses(it) } }
+        val after = available(am)
+        Log.i(TAG, "Memory: ${before / MB} MB free before closing background apps, ${after / MB} MB after")
+        emit("Free memory: ${after / MB} MB")
+    }
 
     fun watch(onTooLow: () -> Unit) {
         stop()
@@ -73,5 +86,8 @@ class MemoryGuard(private val context: Context, private val emit: (String) -> Un
         private const val WARN_BYTES = 1_000L * MB
         private const val STOP_BYTES = 600L * MB
         private const val STOP_CHECKS = 3
+
+        /** Apps that keep the device reachable or that the user works in. */
+        private val KEEP = listOf("com.tailscale.", "app.getmoshi.", "com.termux")
     }
 }
