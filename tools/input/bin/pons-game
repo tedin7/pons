@@ -111,7 +111,6 @@ export DISABLE_VK_LAYER_VALVE_steam_overlay_1=1
 # File calls without proot stops (tools/compat/pons-fastpath.c): loading
 # opens and checks tens of thousands of files. PONS_FASTPATH=0 turns it off.
 FAST=/opt/pons/lib/libpons-fastpath.so
-unset PONS_FASTPATH_ONLY # set for Steam (pons-steam); the game is not "steam"
 if [ "${PONS_FASTPATH:-1}" = 1 ] && [ -n "${PONS_FASTPATH_ROOT:-}" ] && [ -f "$FAST" ]; then
     export LD_PRELOAD="$FAST${LD_PRELOAD:+:$LD_PRELOAD}"
 fi

@@ -20,8 +20,9 @@
  *
  * Enabled by PONS_FASTPATH_ROOT=<host rootfs> and
  * PONS_FASTPATH_BINDS=<guest>=<host>[:<guest>=<host>...]; otherwise every
- * function behaves exactly like libc. PONS_FASTPATH_ONLY=<name> limits it to
- * programs of that name (Steam's web helper does not start with it).
+ * function behaves exactly like libc. Not for Steam's client: with it there,
+ * ColorOS shows "an attempt by a malicious app to damage the system has been
+ * stopped" seconds after Steam starts.
  */
 #define _GNU_SOURCE
 #include <dirent.h>
@@ -132,10 +133,7 @@ __attribute__((constructor)) static void fastpath_init(void)
 {
     const char *r = getenv("PONS_FASTPATH_ROOT");
     const char *b = getenv("PONS_FASTPATH_BINDS");
-    const char *only = getenv("PONS_FASTPATH_ONLY");
     if (!r || r[0] != '/' || strlen(r) >= sizeof root)
-        return;
-    if (only && *only && strcmp(only, program_invocation_short_name) != 0)
         return;
     strcpy(root, r);
     root_len = strlen(root);
