@@ -22,6 +22,11 @@ class SoftKeyboard(context: Context, private val input: () -> InputBridge?) {
         imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_FLAG_NO_FULLSCREEN
         setText(PLACEHOLDER)
         setSelection(1)
+        // Not focusable until the keyboard button is pressed: a focused text field
+        // makes Android show its keyboard bar over the game whenever a hardware
+        // keyboard is connected.
+        isFocusable = false
+        isFocusableInTouchMode = false
     }
 
     private var resetting = false
@@ -68,7 +73,11 @@ class SoftKeyboard(context: Context, private val input: () -> InputBridge?) {
         if (view.hasFocus()) {
             imm.hideSoftInputFromWindow(view.windowToken, 0)
             view.clearFocus()
+            view.isFocusable = false
+            view.isFocusableInTouchMode = false
         } else {
+            view.isFocusable = true
+            view.isFocusableInTouchMode = true
             view.requestFocus()
             imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
         }
