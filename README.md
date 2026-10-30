@@ -105,6 +105,17 @@ One file call, end to end (`tools/compat/pons-fastpath.c`):
 `tools/dev/pp-fastpath-check.sh` runs ~90 tricky file calls with and without the
 fast path and diffs the results; they must be identical.
 
+## Controls
+
+- **Touch:** tap = left click, drag = left drag, long press or a quick two-finger
+  tap = right click, two fingers sliding up/down or pinching = mouse wheel (zoom on a
+  map, scroll in a list). The keyboard button opens Android's keyboard.
+- **Mouse or touchpad:** as on a PC. The pointer follows without clicking; left,
+  right, middle, back and forward buttons and both wheel axes reach the game.
+- **Keyboard:** keys are pressed and released as keys (hold, Shift+click, WASD,
+  Escape, function keys). Every press lasts at least 80 ms, because games that read
+  the keyboard once per frame miss shorter taps.
+
 ## Your Steam library
 
 The launcher shows every game Steam has installed, read from Steam's own
@@ -232,6 +243,17 @@ The game itself reaches "In Game" about 45 s after it starts.
   unchanged; Box64's own tests unchanged (34/36, rounding tests pass). CK3 heavy,
   3 runs: 30 fps, CPU max 55-65 °C (pp11 56-85), GPU 49-54 °C (54-76), skin 37-41 °C
   (43-48).
+- **Box64's own memory (patch 0014, pp13).** In CK3, Box64 held ~1.3 GB of its own
+  memory, almost all of it jump tables: one 128 KB leaf per 16 KB of translated x86
+  code (7809 leaves, 976 MB), each filled with the same "not translated yet" pointer;
+  only 130 045 of 128 million entries ever change. Each leaf is now a private
+  mapping of one shared template file, so untouched pages share a single physical
+  page, and big chunks pack four per block instead of three (a 40-byte overflow left
+  325 MB "fragmented"). Same layout, same dynarec code; it falls back to the old
+  path if the template file is lost (a guest closing all fds) or mappings run short.
+  CK3, 2 runs each: game memory (PSS incl. swap) 11.3-11.6 GB → 10.8-10.9 GB, about
+  2 GB less pushed to swap, 30 fps unchanged; Box64's tests unchanged (34/36).
+  Measured with `PONS_MEMSTATS=2` (Box64 memory by caller) and `=3` (jump-table walk).
 - **Copy into the frame buffer.** The GPU still copies each frame (7 MB) from Mesa's
   swapchain image into the Android buffer (the CPU copy is gone, see *Zero-upload
   frames*). Rendering straight into the buffer would remove it, at the cost of losing

@@ -15,6 +15,37 @@
 #include <X11/keysym.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
+
+/* Games that poll the keyboard once per frame (CK3 at 30 fps) never see a key that
+ * goes down and up within one frame: a press is held at least this long. */
+#define MIN_HOLD_NS 80000000L
+
+static long long now_ns(void)
+{
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1000000000LL + t.tv_nsec;
+}
+
+/* When each keycode last went down, to stretch too-short presses. */
+static long long pressed_at[256];
+
+static void key_event(Display *display, KeyCode code, int down)
+{
+    if (down) {
+        pressed_at[code] = now_ns();
+    } else if (pressed_at[code]) {
+        long long left = MIN_HOLD_NS - (now_ns() - pressed_at[code]);
+        if (left > 0) {
+            XFlush(display);
+            struct timespec wait = { 0, (long)left };
+            nanosleep(&wait, NULL);
+        }
+        pressed_at[code] = 0;
+    }
+    XTestFakeKeyEvent(display, code, down, CurrentTime);
+}
 
 /* Presses and releases the key for sym, holding Shift if the symbol needs it. */
 static void type_keysym(Display *display, KeySym sym)
@@ -24,10 +55,10 @@ static void type_keysym(Display *display, KeySym sym)
     int shifted = XkbKeycodeToKeysym(display, code, 0, 0) != sym &&
                   XkbKeycodeToKeysym(display, code, 0, 1) == sym;
     KeyCode shift = XKeysymToKeycode(display, XK_Shift_L);
-    if (shifted && shift) XTestFakeKeyEvent(display, shift, True, CurrentTime);
-    XTestFakeKeyEvent(display, code, True, CurrentTime);
-    XTestFakeKeyEvent(display, code, False, CurrentTime);
-    if (shifted && shift) XTestFakeKeyEvent(display, shift, False, CurrentTime);
+    if (shifted && shift) key_event(display, shift, True);
+    key_event(display, code, True);
+    key_event(display, code, False);
+    if (shifted && shift) key_event(display, shift, False);
 }
 
 int main(void) {
@@ -62,7 +93,7 @@ int main(void) {
         case 'K':
             if (sscanf(line + 1, "%lx %d", &sym, &b) == 2) {
                 KeyCode code = XKeysymToKeycode(display, (KeySym)sym);
-                if (code) XTestFakeKeyEvent(display, code, b != 0, CurrentTime);
+                if (code) key_event(display, code, b != 0);
             }
             break;
         default:

@@ -44,6 +44,10 @@ class InputBridge(private val sink: OutputStream) {
         const val RIGHT = 3
         const val WHEEL_UP = 4
         const val WHEEL_DOWN = 5
+        const val WHEEL_LEFT = 6
+        const val WHEEL_RIGHT = 7
+        const val BUTTON_BACK = 8
+        const val BUTTON_FORWARD = 9
         const val KEY_BACKSPACE = 0xff08
         const val KEY_RETURN = 0xff0d
         const val KEY_TAB = 0xff09

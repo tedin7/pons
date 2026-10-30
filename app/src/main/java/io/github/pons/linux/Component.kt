@@ -49,18 +49,19 @@ object Components {
         // skips FPCR rounding switches on exact int32 -> double conversions (and, since
         // pp12, whenever the rounding mode does not change), and one that saves the
         // translation cache while the game runs (games here are killed, not exited).
-        version = "main-30d5c771-pp12",
-        sizeBytes = 8_558_636,
-        sha256 = "dbe61d34bf2163d02eaa8f83abf8a67e6a5dc695bc998e0aef84b22c594cd807",
-        url = "${BASE}box64-main-30d5c771-pp12-pons.tar.xz",
+        // pp13: jump tables share their untouched pages (copy-on-write), ~0.6 GB less.
+        version = "main-30d5c771-pp13",
+        sizeBytes = 8_553_300,
+        sha256 = "7329f1bedea9d0d1bc535ac43c6e8f8abc03d013914850f5b3cf50368817e54d",
+        url = "${BASE}box64-main-30d5c771-pp13-pons.tar.xz",
     )
 
     val TOOLS = Component(
         id = "tools",
-        version = "35",
-        sizeBytes = 261_420,
-        sha256 = "93aab61b1b9987f1ac4ae305db3f30982171415489318ad72141ef2c65d74c25",
-        url = "${BASE}pons-tools-35.tar.xz",
+        version = "36",
+        sizeBytes = 261_736,
+        sha256 = "dfa6c2f038a1a3aa4ed1d35cf862e6fc3edd5bf8605ae0f826391ff83ec9011e",
+        url = "${BASE}pons-tools-36.tar.xz",
     )
 
     /** Order matters: the rootfs must exist before anything unpacks into it. */

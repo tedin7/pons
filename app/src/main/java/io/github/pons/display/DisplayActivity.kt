@@ -9,6 +9,7 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.view.Choreographer
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import io.github.pons.linux.GameLibrary
@@ -78,7 +79,10 @@ class DisplayActivity : Activity() {
             renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
         }
         val mouse = TouchMouse({ LinuxSession.input }, ::toScreen)
-        surface.setOnTouchListener { _, event -> mouse.onTouch(event) }
+        val desktop = DesktopInput({ LinuxSession.input }, ::toScreen).also { desktopInput = it }
+        // A real mouse or touchpad: pointer, buttons and wheel as on a PC; fingers: TouchMouse.
+        surface.setOnTouchListener { _, event -> desktop.onMotion(event) || mouse.onTouch(event) }
+        surface.setOnGenericMotionListener { _, event -> desktop.onMotion(event) }
         val keyboard = SoftKeyboard(this) { LinuxSession.input }
         val keyboardButton = Button(this).apply {
             text = "⌨"
@@ -148,6 +152,12 @@ class DisplayActivity : Activity() {
         if (sx !in 0 until area.width || sy !in 0 until area.height) return null
         return (area.x + sx) to (area.y + sy)
     }
+
+    private var desktopInput: DesktopInput? = null
+
+    /** Hardware keyboard keys go to the game as key presses and releases. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        desktopInput?.onKey(event) == true || super.dispatchKeyEvent(event)
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
