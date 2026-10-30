@@ -53,6 +53,7 @@ class DisplaySettings(context: Context) {
             Resolution("Quality 1920×1358", 1920, 1358),
             Resolution("Maximum 2400×1696", 2400, 1696),
         )
-        val DEFAULT = PRESETS[1]
+        // Fast: same 30 fps as Balanced with the GPU about 7 °C cooler on CK3.
+        val DEFAULT = PRESETS[0]
     }
 }
