@@ -1,0 +1,60 @@
+--- a/src/syscall/seccomp.c
++++ b/src/syscall/seccomp.c
+@@ -41,6 +41,10 @@
+ #define PROOT_FASTPATH_MAGIC 0x48544150534e4f50ULL
+ #include <stdint.h>        /* uint*_t, UINT*_MAX, */
+ #include <assert.h>        /* assert(3), */
++#include <termios.h>       /* TCSETS, TCGETS2, */
++#include <sys/ioctl.h>     /* _IOW, */
++#include <linux/sockios.h> /* SIOCGIFINDEX, */
++#include <asm/unistd.h>    /* __NR_ioctl, */
+ 
+ #include "syscall/seccomp.h"
+ #include "syscall/heap.h"
+@@ -287,6 +291,46 @@
+ 			goto end;
+ 	}
+ 
++#if defined(__aarch64__)
++	/* Pons: ioctl is traced (with its exit, so two stops) for a few commands
++	 * only, see PR_ioctl in enter.c and exit.c; games and Steam make hundreds
++	 * of other ioctl calls per second.  Let those through without a stop.
++	 * ashmem commands (type 0x77) stay traced for the ashmem_memfd extension.  */
++	{
++		static const uint32_t kept_cmds[] = {
++			SIOCGIFINDEX, TCSETS + 2, TCGETS2, TCSETS2, TCSETSW2, TCSETSF2,
++			_IOW(0x94, 9, int) /* FICLONE */,
++		};
++		const size_t nb_cmds = sizeof(kept_cmds) / sizeof(kept_cmds[0]);
++		const size_t len = 5 + nb_cmds + 3;
++		struct sock_filter ioctl_filter[5 + sizeof(kept_cmds) / sizeof(kept_cmds[0]) + 3];
++		size_t at = 0;
++
++		ioctl_filter[at++] = (struct sock_filter) BPF_STMT(BPF_LD + BPF_W + BPF_ABS,
++						offsetof(struct seccomp_data, arch));
++		ioctl_filter[at] = (struct sock_filter) BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K,
++						AUDIT_ARCH_AARCH64, 0, len - at - 1); at++;
++		ioctl_filter[at++] = (struct sock_filter) BPF_STMT(BPF_LD + BPF_W + BPF_ABS,
++						offsetof(struct seccomp_data, nr));
++		ioctl_filter[at] = (struct sock_filter) BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K,
++						__NR_ioctl, 0, len - at - 1); at++;
++		ioctl_filter[at++] = (struct sock_filter) BPF_STMT(BPF_LD + BPF_W + BPF_ABS,
++						offsetof(struct seccomp_data, args[1]));
++		for (k = 0; k < nb_cmds; k++, at++)
++			ioctl_filter[at] = (struct sock_filter) BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K,
++						kept_cmds[k], len - at - 1, 0);
++		ioctl_filter[at++] = (struct sock_filter) BPF_STMT(BPF_ALU + BPF_AND + BPF_K, 0xff00);
++		ioctl_filter[at] = (struct sock_filter) BPF_JUMP(BPF_JMP + BPF_JEQ + BPF_K,
++						0x7700, len - at - 1, 0); at++;
++		ioctl_filter[at++] = (struct sock_filter) BPF_STMT(BPF_RET + BPF_K, SECCOMP_RET_ALLOW);
++		assert(at == len);
++
++		status = add_statements(&program, len, ioctl_filter);
++		if (status < 0)
++			goto end;
++	}
++#endif
++
+ 	/* For each handled architectures */
+ 	for (i = 0; i < nb_archs; i++) {
+ 		word_t syscall;

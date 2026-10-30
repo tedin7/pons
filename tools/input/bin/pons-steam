@@ -71,12 +71,20 @@ export STEAM_RUNTIME=1
 # MangoHud must stay off for the client itself: it crashes steamwebhelper's start.
 # For an FPS overlay in a game, set the game's launch options to: MANGOHUD=1 %command%
 export MANGOHUD=0
+# File checks without proot stops (tools/compat/pons-fastpath.c): Steam's
+# directory watcher checks hundreds of files per second, all game long. Only the
+# steam process itself: its web helper does not start with the library.
+FAST=
+if [ "${PONS_FASTPATH:-1}" = 1 ] && [ -n "${PONS_FASTPATH_ROOT:-}" ] && [ -f /opt/pons/lib/libpons-fastpath.so ]; then
+    FAST=:/opt/pons/lib/libpons-fastpath.so
+    export PONS_FASTPATH_ONLY=steam
+fi
 # Exit code 42 means "updated, start me again" (Valve's steam.sh loops the same way).
 while :; do
     # The web UI's GPU process needs DRI3, which Xvfb lacks: draw menus in software.
     # Big Picture (-gamepadui) is one full-screen window, made for touch and pads.
     # Android blocks robust futex syscalls for apps; Steam's IPC engine needs them.
-    LD_PRELOAD=/opt/pons/lib/libpons-robust.so${LD_PRELOAD:+:$LD_PRELOAD} \
+    LD_PRELOAD=/opt/pons/lib/libpons-robust.so$FAST${LD_PRELOAD:+:$LD_PRELOAD} \
         ./steam -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing -gamepadui "$@" && exit 0 || code=$?
     [ "$code" -eq 42 ] || exit "$code"
     fix_steam_tree

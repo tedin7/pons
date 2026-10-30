@@ -13,9 +13,9 @@ docker run --rm -v "$HERE":/src:ro -v "$HERE/../compat":/compat:ro -v "$HERE/../
   install -D -m 644 /src/home/.box64rc /stage/root/.box64rc
   install -d /stage/opt/pons/games && install -m 644 /src/games/*.conf /stage/opt/pons/games/
   mkdir -p /stage/opt/pons/lib
-  aarch64-linux-gnu-gcc -O2 -Wall -Wextra -shared -fPIC -o /stage/opt/pons/lib/libpons-robust.so /compat/pons-robust.c -ldl
+  aarch64-linux-gnu-gcc -O2 -Wall -Wextra -shared -fPIC -o /stage/opt/pons/lib/libpons-robust.so /compat/pons-robust.c /compat/pons-sockfast.c -ldl
   aarch64-linux-gnu-strip /stage/opt/pons/lib/libpons-robust.so
-  aarch64-linux-gnu-gcc -O2 -Wall -Wextra -shared -fPIC -o /stage/opt/pons/lib/libpons-fastpath.so /compat/pons-fastpath.c -ldl
+  aarch64-linux-gnu-gcc -O2 -Wall -Wextra -shared -fPIC -DPONS_SOCKFAST_NO_CLOSE -o /stage/opt/pons/lib/libpons-fastpath.so /compat/pons-fastpath.c /compat/pons-sockfast.c -ldl
   aarch64-linux-gnu-strip /stage/opt/pons/lib/libpons-fastpath.so
   mkdir -p /stage/opt/pons/bench
   aarch64-linux-gnu-gcc -O2 -Wall -Wextra -o /stage/opt/pons/bench/fastpath-check /compat/fastpath-check.c

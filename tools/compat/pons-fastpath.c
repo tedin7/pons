@@ -20,7 +20,8 @@
  *
  * Enabled by PONS_FASTPATH_ROOT=<host rootfs> and
  * PONS_FASTPATH_BINDS=<guest>=<host>[:<guest>=<host>...]; otherwise every
- * function behaves exactly like libc.
+ * function behaves exactly like libc. PONS_FASTPATH_ONLY=<name> limits it to
+ * programs of that name (Steam's web helper does not start with it).
  */
 #define _GNU_SOURCE
 #include <dirent.h>
@@ -131,7 +132,10 @@ __attribute__((constructor)) static void fastpath_init(void)
 {
     const char *r = getenv("PONS_FASTPATH_ROOT");
     const char *b = getenv("PONS_FASTPATH_BINDS");
+    const char *only = getenv("PONS_FASTPATH_ONLY");
     if (!r || r[0] != '/' || strlen(r) >= sizeof root)
+        return;
+    if (only && *only && strcmp(only, program_invocation_short_name) != 0)
         return;
     strcpy(root, r);
     root_len = strlen(root);
@@ -436,9 +440,12 @@ DEFINE_OPENAT(openat64)
  * rename(2) of that file fail with ENOENT (create, close, rename is how Mesa
  * publishes its present file, so no game frame ever reached the screen).
  */
+void pons_sockfast_closing(int fd); /* pons-sockfast.c */
+
 int close(int fd)
 {
     forget_fd(fd);
+    pons_sockfast_closing(fd);
     REAL(close);
     return real_close(fd);
 }
