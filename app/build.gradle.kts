@@ -28,8 +28,8 @@ android {
         applicationId = "io.github.pons"
         minSdk = 33
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.5.1"
         ndk { abiFilters += "arm64-v8a" }
     }
 
