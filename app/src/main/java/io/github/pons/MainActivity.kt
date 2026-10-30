@@ -60,6 +60,10 @@ class MainActivity : Activity(), LauncherActions {
         if (BuildConfig.DEBUG && program != null) {
             intent.removeExtra(EXTRA_PROGRAM)
             run(program)
+        } else {
+            // Not when a program was just requested: the two starts would race and one
+            // would stop the other.
+            startSteamAhead()
         }
     }
 
@@ -74,7 +78,6 @@ class MainActivity : Activity(), LauncherActions {
         refresh()
         LinuxSession.addListener(listener)
         loadLibrary()
-        startSteamAhead()
     }
 
     /**
